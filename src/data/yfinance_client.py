@@ -67,6 +67,8 @@ class YFinanceClient:
                 "revenue_growth": info.get("revenueGrowth"),
                 "operating_margins": info.get("operatingMargins"),
                 "pbr": info.get("priceToBook"),
+                "pe_ratio": info.get("trailingPE"),
+                "payout_ratio": info.get("payoutRatio"),
                 "total_debt": info.get("totalDebt", 0),
                 "total_equity": info.get("totalStockholderEquity") or info.get("bookValue"),
                 "total_assets": info.get("totalAssets"),
