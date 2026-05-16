@@ -34,9 +34,6 @@ WEIGHTS: dict[str, float] = {
     "net_debt_ebitda":         0.10,   # 純負債 / EBITDA
 }
 
-# 段階1で使用する次元キー
-_STAGE1_KEYS = ("operating_margin", "equity_ratio", "peg_ratio", "market_cap", "payout_ratio")
-
 assert abs(sum(WEIGHTS.values()) - 1.0) < 1e-9, "WEIGHTS の合計が 1.0 になっていません"
 
 
@@ -53,8 +50,7 @@ def _linear_score(val: Optional[float], lo: float, hi: float, inverse: bool = Fa
     if val is None or not math.isfinite(val):
         return MISSING_SCORE
     if inverse:
-        # lo（最悪）→ 0点、hi（最良）→ 10点  ← 反転なし
-        # ここでは「大きいほど悪い」場合: hi〜lo を 0〜10 にマップ
+        # 大きいほど悪い指標（PEG・配当性向）用: lo→10点（最良）, hi→0点（最悪）
         score = (hi - val) / (hi - lo) * 10.0
     else:
         score = (val - lo) / (hi - lo) * 10.0
