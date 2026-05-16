@@ -1,0 +1,93 @@
+# ==========================================
+# 投資調査自動化システム 設定ファイル（サンプル）
+# ==========================================
+# このファイルをコピーして config/settings.yaml を作成し、
+# 各 APIキー・パスワードを設定してください。
+#   cp config/settings.yaml.example config/settings.yaml
+# ==========================================
+
+# --- API認証情報 ---
+api:
+  jquants:
+    email: "your-email@example.com"
+    password: "your-jquants-password"
+  gemini:
+    api_key: "your-gemini-api-key"
+    model_weekly: "gemini-2.5-flash"
+    model_daily:  "gemini-2.5-flash"
+  line:
+    channel_access_token: "your-line-channel-access-token"
+    user_id: "your-line-user-id"
+    enabled: true
+    notify_time: "09:00"
+
+# --- スクリーニング閾値 ---
+screener:
+  step1:
+    min_market_cap_jpy: 10_000_000_000
+    min_revenue_growth: -0.10
+    min_operating_margin: 0.0
+    min_pbr: 0.0
+    min_equity_ratio: 0.10
+
+  step2:
+    min_eps_annual_growth: 0.25
+    min_eps_quarterly_growth: 0.25
+    min_revenue_growth_latest: 0.25
+    min_roe: 0.15
+    min_revenue_cagr_3yr: 0.05
+    min_fcf_positive_years: 2
+    min_cf_quality: 0.80
+    max_net_debt_ebitda: 3.0
+    max_payout_ratio: 0.70
+    top_n_candidates: 20
+
+  weights:
+    roe: 0.25
+    revenue_cagr: 0.20
+    fcf_quality: 0.20
+    net_debt_ebitda: 0.15
+    operating_margin: 0.10
+    payout_ratio: 0.10
+
+# --- テクニカル分析パラメータ ---
+technical:
+  sma_periods: [5, 20, 75]
+  ema_periods: [12, 26]
+  macd:
+    fast: 12
+    slow: 26
+    signal: 9
+  rsi_period: 14
+  bollinger:
+    period: 20
+    std_dev: 2.0
+  volume_ratio_threshold: 1.2
+  signal_thresholds:
+    rsi_oversold: 35
+    rsi_overbought: 75
+    earnings_hold_days: 3
+
+# --- データ取得設定 ---
+data:
+  history_days: 400
+  batch_size: 30
+  batch_sleep_sec: 2.0
+  cache_ttl_hours:
+    stock_list: 168
+    fundamentals: 168
+    price_history: 24
+
+# --- 出力設定 ---
+output:
+  weekly_report: "output/weekly_moat_stocks.md"
+  daily_signals_md: "output/daily_trade_signals.md"
+  daily_signals_csv: "output/signals.csv"
+  watchlist_cache: "cache/watchlist.json"
+  step1_cache: "cache/step1_results.json"
+  step2_cache: "cache/step2_results.json"
+
+# --- ログ設定 ---
+logging:
+  level: "INFO"
+  dir: "logs"

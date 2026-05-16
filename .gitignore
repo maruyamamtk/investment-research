@@ -1,0 +1,30 @@
+# APIキー・認証情報（絶対にコミットしない）
+config/settings.yaml
+config/settings.local.yaml
+.env
+.env.*
+
+# Claude Code ローカル設定（個人設定のため除外）
+.claude/settings.local.json
+
+# キャッシュ（大容量・再生成可能）
+cache/
+
+# 自動生成レポート（ローカル出力のため除外）
+output/
+
+# ログ
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+# macOS
+.DS_Store
