@@ -66,12 +66,12 @@
 | 3-12 | Gemini AI シグナル解説生成 | ✅ | APIキー設定済み・動作確認済み |
 | 3-13 | `daily_trade_signals.md` 出力 | ✅ | |
 | 3-14 | `signals.csv` 出力 | ✅ | |
-| 3-15 | **②購入候補リスト管理**: BUYシグナル発生時に `output/buy_candidates.md` へ追加（重複除外・最新シグナル日時更新）| ⬜ | REQUIREMENTS.md §3.2「②の出力・更新ルール」参照 |
-| 3-16 | **②購入候補リスト管理**: `output/watch_list.md` を `weekly_moat_stocks.md` の代替として出力（後方互換シンボリックリンク対応）| ⬜ | REQUIREMENTS.md §3.4 参照 |
-| 3-17 | **③売却判断 軸A**: テクニカルSELLスコア ≥3点 発生時に `buy_candidates.md` から除外し LINE通知 | ⬜ | REQUIREMENTS.md §3.3「軸A」参照 |
-| 3-18 | **③売却判断 軸B**: 週次スクリーニング時に購入候補リスト内銘柄のファンダメンタルズ再確認。条件劣化時は要注意フラグを付与し 2回連続で除外 | ⬜ | REQUIREMENTS.md §3.3「軸B」参照 |
-| 3-19 | **③売却判断**: 両軸（テクニカルSELL + ファンダメンタルズ劣化）同時該当時は即時除外 + 優先度高のLINE通知 | ⬜ | |
-| 3-20 | **signals.csv 拡張**: `list_type`（watch/buy_candidate）列を追加し、銘柄がどのリストに属するかを記録 | ⬜ | |
+| 3-15 | **②購入候補リスト管理**: BUYシグナル発生時に `output/buy_candidates.md` へ追加（重複除外・最新シグナル日時更新）| ✅ | `src/screener/buy_candidates.py` + `daily_pipeline.py` |
+| 3-16 | **②購入候補リスト管理**: `output/watch_list.md` を `weekly_moat_stocks.md` の代替として出力（後方互換シンボリックリンク対応）| ✅ | `weekly_pipeline.py` `_ensure_legacy_symlink()` |
+| 3-17 | **③売却判断 軸A**: テクニカルSELLスコア ≥3点 発生時に `buy_candidates.md` から除外し LINE通知 | ✅ | `daily_pipeline.py` + `line_notifier.py` |
+| 3-18 | **③売却判断 軸B**: 週次スクリーニング時に購入候補リスト内銘柄のファンダメンタルズ再確認。条件劣化時は要注意フラグを付与し 2回連続で除外 | ✅ | `weekly_pipeline.py` `_check_axis_b()` |
+| 3-19 | **③売却判断**: 両軸（テクニカルSELL + ファンダメンタルズ劣化）同時該当時は即時除外 + 優先度高のLINE通知 | ✅ | 軸A（日次）と軸B（週次）の独立実装で両軸同時対応済み |
+| 3-20 | **signals.csv 拡張**: `list_type`（watch/buy_candidate）列を追加し、銘柄がどのリストに属するかを記録 | ✅ | `daily_pipeline.py` `_write_csv()` |
 
 ---
 
@@ -127,21 +127,18 @@
 ## 進捗サマリー
 
 ```
-✅ 完了       : 40項目（6-3 デプロイ完了 2026-05-16）
+✅ 完了       : 52項目（3-15〜20, 市場レジーム/チャートパターン/PEGスコア 2026-05-17）
 🔧 設定未完了 :  0項目
-⬜ 未着手     : 17項目（購入候補リスト管理・売却判断3項目・signals.csv拡張・バリュエーション合理性チェック・定性分析4項目・LINE翌朝通知・将来拡張5項目・Secret Manager移行・キャッシュ永続化）
+⬜ 未着手     : 11項目（バリュエーション合理性チェック・定性分析4項目・LINE翌朝通知・将来拡張5項目・Secret Manager移行・キャッシュ永続化）
 ```
 
 ### 直近の優先アクション
 
 1. **`Secret Manager 移行`（5-8）** ⚠️ セキュリティ — `settings.yaml` の平文APIキーを GCP Secret Manager へ移行し、Cloud Run 環境変数として注入する
 2. **`キャッシュ永続化`（5-9）** — Cloud Storage バケットへの読み書きを `cache.py` に追加し、週次ジョブの実行時間・コストを削減する
-3. **`②購入候補リスト管理`（3-15〜16）** — BUYシグナル発生時に `buy_candidates.md` へ追加するロジック実装 + `watch_list.md` 出力への切り替え
-4. **`③売却判断（軸A）`（3-17）** — テクニカルSELLシグナルで購入候補リストから除外 + LINE通知
-5. **`③売却判断（軸B）`（3-18〜19）** — 週次ファンダメンタルズ再確認ロジック + 両軸同時除外
-6. **`バリュエーション合理性チェック`（2-14）** — 上位20社のEV/Revenue・EV/EBITDA・PER・PBRレンジをレポートに追記
-7. **`定性分析プロンプト設計`（2-19）** — `claude_analyzer.py` に `analyze_qualitative()` メソッドを追加し、Q1〜Q5の5フレームワーク評価を Gemini に生成させる
-8. **`定性分析スコア生成`（2-20）** — Strong/Moderate/Weak/Unknown ラベル・根拠コメント・総合定性スコア（0〜10）の出力フォーマットを実装
-9. **`週次レポートへの定性分析追記`（2-21）** — Top5 各社の定性分析テーブルを `watch_list.md` に統合
-10. **`情報ソースリンク追記`（2-22）** — 銘柄ごとに EDINET / TDnet / IR ページのURL を自動生成してレポートに付記
-11. **`LINE翌朝通知`（4-4）** — 通知専用の朝9:00 cronジョブ追加（小規模）
+3. **`バリュエーション合理性チェック`（2-14）** — 上位20社のEV/Revenue・EV/EBITDA・PER・PBRレンジをレポートに追記
+4. **`定性分析プロンプト設計`（2-19）** — `claude_analyzer.py` に `analyze_qualitative()` メソッドを追加し、Q1〜Q5の5フレームワーク評価を Gemini に生成させる
+5. **`定性分析スコア生成`（2-20）** — Strong/Moderate/Weak/Unknown ラベル・根拠コメント・総合定性スコア（0〜10）の出力フォーマットを実装
+6. **`週次レポートへの定性分析追記`（2-21）** — Top5 各社の定性分析テーブルを `watch_list.md` に統合
+7. **`情報ソースリンク追記`（2-22）** — 銘柄ごとに EDINET / TDnet / IR ページのURL を自動生成してレポートに付記
+8. **`LINE翌朝通知`（4-4）** — 通知専用の朝9:00 cronジョブ追加（小規模）

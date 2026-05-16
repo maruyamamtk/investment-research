@@ -116,9 +116,41 @@ class LineNotifier:
         if not added and not removed:
             lines.append("\n（前週からの変更なし）")
 
-        lines.append("\n詳細は weekly_moat_stocks.md を確認してください。")
+        lines.append("\n詳細は watch_list.md を確認してください。")
 
         return self._send([self._text("\n".join(lines))])
+
+    # ---- 購入候補リスト追加通知 ----
+
+    def notify_buy_candidate_added(self, signal: dict) -> bool:
+        """BUYシグナル発生・購入候補リストへの追加をLINEで通知する"""
+        name = signal.get("name", signal["ticker"])
+        ticker = signal["ticker"]
+        msg = (
+            f"🟢 購入候補リストに追加（{_today()}）\n\n"
+            f"{name}（{ticker}）\n"
+            f"シグナル強度: {signal.get('strength')}/10\n"
+            f"現在値: {signal.get('close')}円\n"
+            f"理由: {signal.get('reasons', '')[:80]}\n\n"
+            f"詳細は buy_candidates.md を確認してください。"
+        )
+        return self._send([self._text(msg)])
+
+    # ---- 購入候補リスト除外通知 ----
+
+    def notify_sell_candidate_removed(self, signal: dict, reason: str = "テクニカルSELL") -> bool:
+        """SELLシグナルまたは条件劣化・購入候補リストからの除外をLINEで通知する"""
+        name = signal.get("name", signal["ticker"])
+        ticker = signal["ticker"]
+        msg = (
+            f"🔴 購入候補リストから除外（{_today()}）\n\n"
+            f"{name}（{ticker}）\n"
+            f"除外理由: {reason}\n"
+            f"現在値: {signal.get('close')}円\n"
+            f"シグナル: {signal.get('reasons', '')[:80]}\n\n"
+            f"詳細は buy_candidates.md を確認してください。"
+        )
+        return self._send([self._text(msg)])
 
     # ---- エラー通知 ----
 

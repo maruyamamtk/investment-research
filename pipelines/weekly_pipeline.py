@@ -4,8 +4,9 @@
 2. Step1: 基本財務フィルタ（yfinance）
 3. Step2: EPS・売上高・ROEフィルタ（J-Quants）+ FCF・財務健全性（yfinance）+ スコアリング
 4. AIによる投資メモ・ベアケース生成（Claude）
-5. weekly_moat_stocks.md 出力
-6. LINE通知（ウォッチリスト変更）
+5. watch_list.md 出力（後方互換: weekly_moat_stocks.md シンボリックリンク）
+6. ③売却判断 軸B: 購入候補リストのファンダメンタルズ再確認
+7. LINE通知（ウォッチリスト変更・軸B除外）
 """
 import argparse
 import math
@@ -22,6 +23,7 @@ from src.data.jquants_client import JQuantsClient, get_prime_tickers_fallback
 from src.data.yfinance_client import YFinanceClient
 from src.screener.step1_filter import apply_step1_filter
 from src.screener.step2_analysis import apply_step2_analysis, format_step2_table
+from src.screener.buy_candidates import BuyCandidatesManager
 from src.ai_analyst.claude_analyzer import ClaudeAnalyzer
 from src.notification.line_notifier import from_config as line_from_config
 from src.utils.cache import Cache
@@ -50,6 +52,10 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
         model=cfg["api"]["gemini"]["model_weekly"],
     )
     notifier = line_from_config(cfg)
+    buy_mgr = BuyCandidatesManager(
+        cache_path=cfg["output"].get("buy_candidates_cache", "cache/buy_candidates.json"),
+        md_path=cfg["output"].get("buy_candidates_md", "output/buy_candidates.md"),
+    )
 
     if force_refresh:
         for key in ["step1_results", "step2_results", "watchlist"]:
@@ -87,7 +93,6 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
         step1_df = apply_step1_filter(
             basic_info_list,
             min_market_cap=s1["min_market_cap_jpy"],
-            min_revenue_growth=s1["min_revenue_growth"],
             min_operating_margin=s1["min_operating_margin"],
             min_pbr=s1["min_pbr"],
             min_equity_ratio=s1["min_equity_ratio"],
@@ -177,6 +182,10 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
         f.write(report)
     logger.info(f"週次レポートを出力しました: {output_path}")
 
+    # 後方互換: weekly_moat_stocks.md → watch_list.md のシンボリックリンク
+    legacy_path = cfg["output"].get("weekly_report_legacy", "output/weekly_moat_stocks.md")
+    _ensure_legacy_symlink(output_path, legacy_path)
+
     # --- Step5: ウォッチリスト更新・LINE通知 ---
     new_watchlist = step2_df["ticker"].head(20).tolist()
     prev_watchlist = cache.get("watchlist", ttl_hours=9999) or []
@@ -192,8 +201,71 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
         ticker_names=ticker_names,
     )
 
+    # --- Step6: 軸B ファンダメンタルズ再確認 ---
+    if not dry_run:
+        logger.info("【Step6】③売却判断 軸B: 購入候補リストのファンダメンタルズ再確認")
+        _check_axis_b(buy_mgr, step2_df, new_watchlist, notifier)
+
     logger.info("週次パイプライン完了")
     return step2_df
+
+
+def _ensure_legacy_symlink(target: str, link_path: str) -> None:
+    """watch_list.md への後方互換シンボリックリンクを作成する。"""
+    try:
+        if os.path.islink(link_path):
+            os.unlink(link_path)
+        elif os.path.exists(link_path):
+            os.rename(link_path, link_path + ".bak")
+        # 相対パスでリンク（同一ディレクトリ内）
+        rel_target = os.path.basename(target)
+        os.symlink(rel_target, link_path)
+        logger.info(f"後方互換シンボリックリンク作成: {link_path} → {rel_target}")
+    except Exception as e:
+        logger.warning(f"シンボリックリンク作成失敗（スキップ）: {e}")
+
+
+def _check_axis_b(
+    buy_mgr: "BuyCandidatesManager",
+    step2_df,
+    new_watchlist: list[str],
+    notifier,
+) -> None:
+    """
+    軸B: 購入候補リスト内銘柄が①監視対象条件を満たしているか確認する。
+    - 上位20社から脱落した場合: caution_count += 1
+    - caution_count >= 2 の場合: 除外 + LINE通知
+    - 引き続き条件を満たす場合: caution_count リセット
+    """
+    import pandas as pd
+
+    candidates = buy_mgr.get_tickers()
+    if not candidates:
+        logger.info("  購入候補リストは空 — 軸B確認をスキップ")
+        return
+
+    watch_set = set(new_watchlist)
+    step2_tickers = set(step2_df["ticker"].tolist()) if step2_df is not None and len(step2_df) > 0 else set()
+
+    for ticker in candidates:
+        # 監視対象リストから脱落している場合
+        degraded = ticker not in watch_set
+
+        if degraded:
+            count = buy_mgr.mark_caution(ticker)
+            logger.info(f"  軸B劣化: {ticker} (caution_count={count})")
+            if count >= 2:
+                entry = next((c for c in buy_mgr.get_all() if c["ticker"] == ticker), {})
+                buy_mgr.remove(ticker, reason="ファンダメンタルズ劣化（軸B・2回連続）")
+                notifier.notify_sell_candidate_removed(
+                    {"ticker": ticker, "name": entry.get("name", ticker), "close": entry.get("close")},
+                    reason="ファンダメンタルズ劣化（週次スクリーニング2回連続条件外）",
+                )
+        else:
+            buy_mgr.clear_caution(ticker)
+
+    buy_mgr.write_markdown()
+    logger.info("  軸B確認完了")
 
 
 def _is_nan(val) -> bool:
