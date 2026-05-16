@@ -36,11 +36,15 @@
 | 2-11 | **Step2-E**: CF品質フィルタ（OCF/純利益 ≥0.8）| ✅ | |
 | 2-12 | **Step2-F**: 純負債/EBITDAフィルタ（≤3.0x）| ✅ | |
 | 2-13 | **Step2-G**: スコアリング・加重平均で上位20社選定 | ✅ | 6指標×重み |
-| 2-14 | **Step2-H**: バリュエーション合理性チェック（EV/Revenue・EV/EBITDA・PER・PBRのレンジ確認をレポートに記載）| ⬜ | 要件定義書 §3.1 参照 |
+| 2-14 | **Step2-H**: バリュエーション合理性チェック（EV/Revenue・EV/EBITDA・PER・PBRのレンジ確認をレポートに記載）| ⬜ | REQUIREMENTS.md §3.1 2-H 参照 |
 | 2-15 | **Step2-I**: 銘柄分類（「全条件」「EPS条件のみ」）| ✅ | |
 | 2-16 | Gemini AI 投資テーゼ生成（Top5銘柄）| ✅ | APIキー設定済み・動作確認済み |
 | 2-17 | Gemini AI ベアケース・リスク分析生成（Top5銘柄）| ✅ | APIキー設定済み・動作確認済み |
 | 2-18 | `weekly_moat_stocks.md` 出力 | ✅ | |
+| 2-19 | **Step2-J**: 定性分析プロンプト設計（Q1〜Q5フレームワーク）| ⬜ | `claude_analyzer.py` に `analyze_qualitative()` メソッド追加。REQUIREMENTS.md §3.1 2-J 参照 |
+| 2-20 | **Step2-J**: 定性スコア（0〜10）+ 4段階ラベル生成実装 | ⬜ | Strong/Moderate/Weak/Unknown の4段階評価 + 根拠コメント（1〜2文）|
+| 2-21 | **Step2-J**: 週次レポートへの定性分析セクション追加 | ⬜ | Top5各社のQ1〜Q5評価表 + 総合定性スコアを `weekly_moat_stocks.md` に追記 |
+| 2-22 | **Step2-J**: 情報ソース欄の追記（EDINET/TDnet URLリンク）| ⬜ | レポート末尾に「参照すべき一次情報ソース」のリンクを銘柄ごとに列挙（v1.1スコープ）|
 
 ---
 
@@ -87,6 +91,8 @@
 | 5-5 | ログ記録（`logs/YYYYMMDD.log`）| ✅ | `src/utils/logger.py` |
 | 5-6 | 個別API取得失敗時は `ERROR` として継続処理 | ✅ | |
 | 5-7 | パッケージ環境構築（yfinance・PyYAML・tabulate）| ✅ | `requirements.txt` / `setup.sh` |
+| 5-8 | **【セキュリティ】APIキーを Secret Manager へ移行** | ⬜ | `config/settings.yaml` に J-Quants・Gemini・LINE の認証情報が平文保存されている。GCP Secret Manager に移し、Cloud Run の環境変数として注入する（REQUIREMENTS.md §5.2 参照）|
+| 5-9 | **【コスト最適化】Cloud Storage によるキャッシュの永続化** | ⬜ | Cloud Run コンテナはエフェメラルなため、実行ごとにキャッシュが消失し全銘柄フルスキャンが発生する。`cache/` を GCS バケットに読み書きするよう `src/utils/cache.py` を拡張し、週次実行時間を短縮する（REQUIREMENTS.md §4.3 参照）|
 
 ---
 
@@ -96,7 +102,7 @@
 |---|------|------|------|
 | 6-1 | 週次cronスクリプト作成（`run_weekly.sh`）| ✅ | |
 | 6-2 | 日次cronスクリプト作成（`run_daily.sh`）| ✅ | |
-| 6-3 | Cloud Run + Cloud Schedulerへの登録 | ⬜ | Dockerfile作成 → Artifact Registryへpush → Cloud Run Jobs作成 → Cloud Schedulerで定時起動設定 |
+| 6-3 | Cloud Run + Cloud Schedulerへの登録 | ✅ | Artifact Registry作成・イメージpush・Cloud Run Jobs（weekly/daily）・Cloud Scheduler登録完了（2026-05-16）|
 
 ---
 
@@ -115,14 +121,18 @@
 ## 進捗サマリー
 
 ```
-✅ 完了       : 39項目
+✅ 完了       : 40項目（6-3 デプロイ完了 2026-05-16）
 🔧 設定未完了 :  0項目
-⬜ 未着手     :  4項目（バリュエーション合理性チェック・LINE翌朝通知・cron登録・将来拡張5項目）
+⬜ 未着手     : 11項目（バリュエーション合理性チェック・定性分析4項目・LINE翌朝通知・将来拡張5項目・Secret Manager移行・キャッシュ永続化）
 ```
 
 ### 直近の優先アクション
 
-1. **`Cloud Run + Cloud Scheduler登録`（6-3）** — Dockerfile作成・デプロイ・スケジューラ設定が必要
-2. **`Gemini APIキー設定`（1-6）** — `config/settings.yaml` の `api.gemini.api_key` に入力するだけで AI機能（2-16・2-17・3-12）が一括解決
-3. **`バリュエーション合理性チェック`（2-14）** — レポートへの倍数レンジ備考追記（コード修正）
-4. **`LINE翌朝通知`（4-4）** — 通知専用の朝9:00 cronジョブの追加（小規模な実装）
+1. **`Secret Manager 移行`（5-8）** ⚠️ セキュリティ — `settings.yaml` の平文APIキーを GCP Secret Manager へ移行し、Cloud Run 環境変数として注入する
+2. **`キャッシュ永続化`（5-9）** — Cloud Storage バケットへの読み書きを `cache.py` に追加し、週次ジョブの実行時間・コストを削減する
+3. **`バリュエーション合理性チェック`（2-14）** — 上位20社のEV/Revenue・EV/EBITDA・PER・PBRレンジをレポートに追記
+4. **`定性分析プロンプト設計`（2-19）** — `claude_analyzer.py` に `analyze_qualitative()` メソッドを追加し、Q1〜Q5の5フレームワーク評価を Gemini に生成させる
+5. **`定性分析スコア生成`（2-20）** — Strong/Moderate/Weak/Unknown ラベル・根拠コメント・総合定性スコア（0〜10）の出力フォーマットを実装
+6. **`週次レポートへの定性分析追記`（2-21）** — Top5 各社の定性分析テーブルを `weekly_moat_stocks.md` に統合
+7. **`情報ソースリンク追記`（2-22）** — 銘柄ごとに EDINET / TDnet / IR ページのURL を自動生成してレポートに付記
+8. **`LINE翌朝通知`（4-4）** — 通知専用の朝9:00 cronジョブ追加（小規模）
