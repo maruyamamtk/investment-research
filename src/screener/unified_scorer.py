@@ -13,6 +13,7 @@ from src.utils.logger import get_logger
 
 logger = get_logger("unified_scorer")
 
+
 MISSING_SCORE = 5.0  # データ欠損時の代替スコア（0〜10の中間値）
 
 # 全13次元の重み（合計 = 1.0 = 100%）
@@ -207,4 +208,255 @@ def filter_stage1_candidates(
     n = min(n, len(df))
     result = df.head(n).reset_index(drop=True)
     logger.info(f"段階1絞り込み: {len(df)}銘柄 → {len(result)}銘柄（top {n}）")
+    return result
+
+
+# ============================================================
+# 段階2: 個別次元スコア関数（J-Quants + yfinance詳細）
+# ============================================================
+
+def score_eps_annual_growth(val: Optional[float]) -> float:
+    """年次EPS成長率: ≤0%→0点、≥30%→10点"""
+    return _linear_score(val, lo=0.0, hi=0.30)
+
+
+def score_eps_quarterly_growth(val: Optional[float], is_monotone: bool = False) -> float:
+    """四半期EPS成長率: ≤0%→0点、≥25%→9点（単調増加で+1点ボーナス、最大10点）"""
+    if val is None or not math.isfinite(val):
+        return MISSING_SCORE
+    if val <= 0:
+        return 0.0
+    base = round(_clamp((val / 0.25) * 9.0, 0.0, 9.0), 4)
+    if is_monotone:
+        return min(10.0, round(base + 1.0, 4))
+    return base
+
+
+def score_revenue_annual_growth(val: Optional[float]) -> float:
+    """年次売上高成長率: ≤0%→0点、≥20%→10点"""
+    return _linear_score(val, lo=0.0, hi=0.20)
+
+
+def score_revenue_quarterly_growth(val: Optional[float]) -> float:
+    """四半期売上高成長率: ≤0%→0点、≥25%→10点"""
+    return _linear_score(val, lo=0.0, hi=0.25)
+
+
+def score_roe(val: Optional[float]) -> float:
+    """ROE: ≤0%→0点、≥30%→10点"""
+    return _linear_score(val, lo=0.0, hi=0.30)
+
+
+def score_cf_quality(val: Optional[float]) -> float:
+    """CF品質（OCF/純利益）: ≤0→0点、≥2.0→10点"""
+    return _linear_score(val, lo=0.0, hi=2.0)
+
+
+def score_fcf_years(val: Optional[float]) -> float:
+    """FCF継続年数: 0年→0点、3年→10点"""
+    if val is None or not math.isfinite(val):
+        return MISSING_SCORE
+    return round(_clamp((val / 3.0) * 10.0, 0.0, 10.0), 4)
+
+
+def score_net_debt_ebitda(val: Optional[float]) -> float:
+    """純負債/EBITDA: ≤0x→10点、≥5x→0点（小さいほど高得点）"""
+    return _linear_score(val, lo=0.0, hi=5.0, inverse=True)
+
+
+# ============================================================
+# 段階2: ヘルパー（J-Quantsデータからの指標計算）
+# ============================================================
+
+def _calc_eps_annual_growth(annual: list[dict]) -> Optional[float]:
+    """直近3期の平均EPS yoy成長率を計算する。"""
+    valid = [a for a in annual if a.get("eps") is not None]
+    if len(valid) < 2:
+        return None
+    growth_rates = []
+    for i in range(min(3, len(valid) - 1)):
+        curr = valid[i]["eps"]
+        prev = valid[i + 1]["eps"]
+        if prev is not None and prev != 0:
+            growth_rates.append((curr - prev) / abs(prev))
+    return sum(growth_rates) / len(growth_rates) if growth_rates else None
+
+
+def _calc_eps_quarterly_growth(quarterly: list[dict]) -> tuple[Optional[float], bool]:
+    """最新四半期EPS yoy成長率と単調増加フラグを返す。
+
+    単調増加: 直近3四半期の yoy 成長率が古い→新しい順に非減少。
+    Returns: (growth_rate, is_monotone)
+    """
+    valid = [q for q in quarterly if q.get("eps") is not None]
+    if len(valid) < 2:
+        return None, False
+
+    # 最新四半期のyoy成長率
+    latest = valid[0]
+    period_type = latest.get("period_type")
+    yoy_match = next((q for q in valid[1:] if q.get("period_type") == period_type), None)
+    growth: Optional[float] = None
+    if yoy_match and yoy_match["eps"] not in (None, 0):
+        growth = (latest["eps"] - yoy_match["eps"]) / abs(yoy_match["eps"])
+
+    # 単調増加チェック: 直近3四半期の yoy 成長率が加速傾向か
+    is_monotone = False
+    if len(valid) >= 4:
+        recent3 = valid[:3]
+        older = valid[3:]
+        growths = []
+        for q in recent3:
+            pt = q.get("period_type")
+            yoy_q = next((o for o in older if o.get("period_type") == pt), None)
+            if yoy_q and yoy_q["eps"] not in (None, 0):
+                g = (q["eps"] - yoy_q["eps"]) / abs(yoy_q["eps"])
+                growths.append(g)
+        # growths[0]=最新, growths[-1]=最古 → 最新 >= 直前 >= 最古 で単調増加
+        if len(growths) >= 2:
+            is_monotone = all(growths[i] >= growths[i + 1] for i in range(len(growths) - 1))
+
+    return growth, is_monotone
+
+
+def _calc_revenue_annual_growth(annual: list[dict]) -> Optional[float]:
+    """直近2期の平均売上高 yoy 成長率を計算する。"""
+    valid = [a for a in annual if a.get("net_sales") is not None and a["net_sales"] > 0]
+    if len(valid) < 2:
+        return None
+    growth_rates = []
+    for i in range(min(2, len(valid) - 1)):
+        curr = valid[i]["net_sales"]
+        prev = valid[i + 1]["net_sales"]
+        if prev and prev > 0:
+            growth_rates.append((curr - prev) / prev)
+    return sum(growth_rates) / len(growth_rates) if growth_rates else None
+
+
+def _calc_revenue_quarterly_growth(quarterly: list[dict]) -> Optional[float]:
+    """最新四半期売上高 yoy 成長率を計算する。"""
+    valid = [q for q in quarterly if q.get("net_sales") is not None and q["net_sales"] > 0]
+    if len(valid) < 2:
+        return None
+    latest = valid[0]
+    period_type = latest.get("period_type")
+    yoy_match = next((q for q in valid[1:] if q.get("period_type") == period_type), None)
+    if yoy_match and yoy_match["net_sales"] and yoy_match["net_sales"] > 0:
+        return (latest["net_sales"] - yoy_match["net_sales"]) / yoy_match["net_sales"]
+    return None
+
+
+# ============================================================
+# 段階2: 精緻スコア計算
+# ============================================================
+
+def calculate_stage2_scores(
+    stage1_df: pd.DataFrame,
+    eps_series_map: dict[str, dict],
+    detailed_fins_map: dict[str, dict],
+) -> pd.DataFrame:
+    """
+    段階2: J-Quants財務諸表 + yfinance詳細で8次元の精緻スコアを計算し、
+    段階1スコアと合算して最終総合スコア（0〜10点）を確定する。
+
+    Args:
+        stage1_df: calculate_stage1_scores() + filter_stage1_candidates() の返り値
+        eps_series_map: JQuantsClient.get_statements_batch() の返り値
+            {ticker: {"annual": [...], "quarterly": [...]}}
+        detailed_fins_map: {ticker: YFinanceClient.get_detailed_financials(ticker)} の辞書
+
+    Returns:
+        pd.DataFrame: 段階2スコア列と total_score 列を付与した DataFrame（total_score 降順ソート）
+    """
+    records = []
+
+    for _, row in stage1_df.iterrows():
+        ticker = row["ticker"]
+        eps_data = eps_series_map.get(ticker, {"annual": [], "quarterly": []})
+        fins = detailed_fins_map.get(ticker, {})
+
+        annual = eps_data.get("annual", [])
+        quarterly = eps_data.get("quarterly", [])
+
+        # --- 各指標の計算 ---
+        eps_annual_growth = _calc_eps_annual_growth(annual)
+        eps_qtr_growth, is_monotone = _calc_eps_quarterly_growth(quarterly)
+        rev_annual_growth = _calc_revenue_annual_growth(annual)
+        rev_qtr_growth = _calc_revenue_quarterly_growth(quarterly)
+
+        # ROE: J-Quants優先、取得不可の場合はyfinance補完
+        roe = annual[0].get("roe") if annual else None
+        if roe is None:
+            roe = fins.get("roe")
+
+        cf_quality = fins.get("cf_quality")
+        fcf_years = fins.get("fcf_positive_years")
+        net_debt_ebitda = fins.get("net_debt_ebitda")
+
+        # --- 段階2スコア計算 ---
+        s2_eps_annual = score_eps_annual_growth(eps_annual_growth)
+        s2_eps_quarterly = score_eps_quarterly_growth(eps_qtr_growth, is_monotone)
+        s2_rev_annual = score_revenue_annual_growth(rev_annual_growth)
+        s2_rev_quarterly = score_revenue_quarterly_growth(rev_qtr_growth)
+        s2_roe = score_roe(roe)
+        s2_cf_quality = score_cf_quality(cf_quality)
+        s2_fcf_years = score_fcf_years(fcf_years)
+        s2_net_debt = score_net_debt_ebitda(net_debt_ebitda)
+
+        stage2_raw = round(
+            s2_eps_annual    * WEIGHTS["eps_annual_growth"]
+            + s2_eps_quarterly * WEIGHTS["eps_quarterly_growth"]
+            + s2_rev_annual    * WEIGHTS["revenue_annual_growth"]
+            + s2_rev_quarterly * WEIGHTS["revenue_quarterly_growth"]
+            + s2_roe           * WEIGHTS["roe"]
+            + s2_cf_quality    * WEIGHTS["cf_quality"]
+            + s2_fcf_years     * WEIGHTS["fcf_years"]
+            + s2_net_debt      * WEIGHTS["net_debt_ebitda"],
+            5,
+        )
+
+        stage1_raw = row.get("stage1_raw", 0.0)
+        total_score = round(stage1_raw + stage2_raw, 5)
+
+        records.append({
+            **row.to_dict(),
+            # 段階2の計算値
+            "eps_annual_growth": eps_annual_growth,
+            "eps_quarterly_growth": eps_qtr_growth,
+            "eps_quarterly_monotone": is_monotone,
+            "revenue_annual_growth": rev_annual_growth,
+            "revenue_quarterly_growth": rev_qtr_growth,
+            "roe": roe,
+            "cf_quality": cf_quality,
+            "fcf_positive_years": fcf_years,
+            "net_debt_ebitda": net_debt_ebitda,
+            # 段階2スコア
+            "s2_eps_annual": s2_eps_annual,
+            "s2_eps_quarterly": s2_eps_quarterly,
+            "s2_revenue_annual": s2_rev_annual,
+            "s2_revenue_quarterly": s2_rev_quarterly,
+            "s2_roe": s2_roe,
+            "s2_cf_quality": s2_cf_quality,
+            "s2_fcf_years": s2_fcf_years,
+            "s2_net_debt_ebitda": s2_net_debt,
+            "stage2_raw": stage2_raw,
+            "total_score": total_score,
+        })
+
+    df = pd.DataFrame(records)
+    if df.empty:
+        return df
+
+    df = df.sort_values("total_score", ascending=False).reset_index(drop=True)
+    logger.info(
+        f"段階2スコア計算完了: {len(df)}銘柄, "
+        f"total_score最大={df['total_score'].max():.3f}"
+    )
+    return df
+
+
+def select_final_watchlist(df: pd.DataFrame, top_n: int = 20) -> pd.DataFrame:
+    """段階2スコア確定済み DataFrame から上位 top_n 社を選定する。"""
+    result = df.head(top_n).reset_index(drop=True)
+    logger.info(f"最終ウォッチリスト選定: {len(df)}銘柄 → 上位{len(result)}銘柄")
     return result
