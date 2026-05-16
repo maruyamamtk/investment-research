@@ -14,7 +14,6 @@ logger = get_logger("step1_filter")
 def apply_step1_filter(
     basic_info_list: list[dict],
     min_market_cap: float = 10_000_000_000,
-    min_revenue_growth: float = -0.10,
     min_operating_margin: float = 0.0,
     min_pbr: float = 0.0,
     min_equity_ratio: float = 0.10,
@@ -24,10 +23,11 @@ def apply_step1_filter(
 
     フィルタ条件:
     - 時価総額 >= min_market_cap（デフォルト 100億円）
-    - 売上高成長率 >= min_revenue_growth（デフォルト -10%）
     - 営業利益率 > min_operating_margin（デフォルト 0%）
     - PBR > min_pbr（デフォルト 0）
     - 自己資本比率 >= min_equity_ratio（デフォルト 10%）
+
+    ※ 売上高成長率フィルタはStep2-C（年次・四半期）に移管済み。
     """
     df = pd.DataFrame(basic_info_list)
     original_count = len(df)
@@ -51,12 +51,6 @@ def apply_step1_filter(
     pbr_mask = passed["pbr"].isna() | (passed["pbr"] > min_pbr)
     passed = passed[pbr_mask]
     logger.info(f"  PBRフィルタ: {before} → {len(passed)}件（除外 {before - len(passed)}件）")
-
-    # --- 売上高成長率フィルタ ---
-    before = len(passed)
-    growth_mask = passed["revenue_growth"].isna() | (passed["revenue_growth"] >= min_revenue_growth)
-    passed = passed[growth_mask]
-    logger.info(f"  売上高成長率フィルタ: {before} → {len(passed)}件（除外 {before - len(passed)}件）")
 
     # --- 自己資本比率フィルタ ---
     before = len(passed)

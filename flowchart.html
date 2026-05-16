@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>日本株投資調査自動化システム — フローチャート v1.4</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #232635;
+      --border: #2e3250;
+      --text: #e2e8f0;
+      --text-muted: #8892a4;
+      --accent-blue: #4f8ef7;
+      --accent-green: #22c55e;
+      --accent-red: #f87171;
+      --accent-yellow: #fbbf24;
+      --accent-purple: #a78bfa;
+      --accent-cyan: #22d3ee;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', sans-serif;
+      min-height: 100vh;
+      padding: 32px 24px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    header h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+    }
+
+    header p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      margin-bottom: 36px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .chart-container {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 40px 32px;
+      max-width: 1200px;
+      margin: 0 auto 40px;
+      overflow-x: auto;
+    }
+
+    .mermaid {
+      display: flex;
+      justify-content: center;
+    }
+
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+      max-width: 1200px;
+      margin: 0 auto 40px;
+    }
+
+    .step-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .step-card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .step-badge {
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.05em;
+    }
+
+    .badge-weekly { background: rgba(79,142,247,0.2); color: var(--accent-blue); border: 1px solid rgba(79,142,247,0.4); }
+    .badge-daily  { background: rgba(34,197,94,0.2);  color: var(--accent-green); border: 1px solid rgba(34,197,94,0.4); }
+    .badge-mixed  { background: rgba(248,113,113,0.2); color: var(--accent-red);  border: 1px solid rgba(248,113,113,0.4); }
+
+    .step-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .step-subtitle {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .step-items {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .step-items li {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 0.83rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .step-items li::before {
+      content: '→';
+      color: var(--accent-blue);
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .step-output {
+      margin-top: 14px;
+      padding: 10px 12px;
+      background: var(--surface2);
+      border-radius: 8px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .step-output span {
+      font-family: 'Courier New', monospace;
+      color: var(--accent-cyan);
+      font-size: 0.78rem;
+    }
+
+    footer {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>日本株投資調査自動化システム</h1>
+  <p>3段階銘柄選定フローチャート — v1.4</p>
+</header>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#4f8ef7"></div>週次処理（日曜 8:00）</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>日次処理（平日 19:30）</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fbbf24"></div>週次 + 日次の複合処理</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f87171"></div>除外・アラート</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#a78bfa"></div>LINE通知</div>
+</div>
+
+<div class="chart-container">
+  <div class="mermaid">
+flowchart TD
+    START(["🏢 全プライム市場銘柄\n約1,600社"])
+
+    subgraph W["① 監視対象銘柄の選定（週次 — 毎週日曜 8:00）"]
+        direction TB
+        S1["Step1: 基本財務フィルタ\n時価総額 ≥100億 / 営業利益率 >0%\nPBR >0 / 売上成長 ≥−10% / 自己資本比率 ≥10%"]
+        S2["Step2: 成長性・モート精緻分析\nEPS成長（年次・四半期）≥25%\n売上高成長（年次プラス継続 + 四半期）\nROE >15% / FCF品質 ≥0.8\n純負債/EBITDA ≤3.0x\nスコアリング: ROE/CAGR/FCF/PEG/負債/利益率/配当"]
+        AI["Gemini AI 定性分析\nQ1 事業モデル / Q2 経営陣\nQ3 市場環境 / Q4 顧客基盤 / Q5 組織力\n総合定性スコア（0〜10）← Top5銘柄"]
+        WATCH[["📋 監視対象銘柄リスト\nwatch_list.md\n上位20社"]]
+    end
+
+    subgraph D["② 購入銘柄の選定（日次 — 平日 19:30）"]
+        direction TB
+        MKTREGIME["市場レジーム判定（日経225）\nBULL: BUY閾値3点\nNEUTRAL: BUY閾値4点\nBEAR: BUY閾値5点"]
+        TECH["テクニカル分析\nSMA 5/20/75日 / EMA 12/26日\nMACD (12,26,9) / RSI 14日\nボリンジャーバンド 20日±2σ\n出来高比率\nチャートパターン認識\n（ブレイクアウト/ダブルボトム/ブルフラッグ\nカップ&ハンドル/H&S/ダブルトップ）"]
+        FAKE{"フェイクアウト回避\n決算前後3日？\nデータ < 30営業日？"}
+        BSCORE{"BUYスコア ≥ BUY閾値\nかつ BUY > SELL ?\n―――――――――\nBULL相場: ≥ 3点\nNEUTRAL: ≥ 4点\nBEAR相場: ≥ 5点"}
+        BUY[["📈 購入候補リスト\nbuy_candidates.md\n※長期間更新なし可"]]
+        WATCH2["⏸ WATCH継続\n監視対象リストで待機"]
+    end
+
+    subgraph S["③ 売却銘柄の選定（日次 + 週次）"]
+        direction TB
+        HOLDCHECK["購入候補リスト対象\nテクニカル分析 + ①と同等の\nファンダメンタルズ再確認"]
+        SSCORE{"SELLスコア ≥ 3点\n（市場レジームに依存しない固定閾値）\nOR ファンダメンタルズ劣化？"}
+        KEEP["✅ 保持継続\n購入候補リストで維持"]
+        SELL_OUT["🔴 購入候補リストから除外\n売却推奨"]
+    end
+
+    LINE["📱 LINE通知"]
+
+    DISCARD["❌ 除外（スクリーニング落選）"]
+
+    START --> S1
+    S1 -->|"約200〜400社 通過"| S2
+    S1 -->|"落選"| DISCARD
+
+    S2 -->|"上位20社"| AI
+    AI --> WATCH
+
+    WATCH -->|"日次チェック対象"| MKTREGIME
+    MKTREGIME -->|"BUY閾値を設定"| TECH
+    TECH --> FAKE
+    FAKE -->|"HOLD — 抑制"| WATCH2
+    FAKE -->|"通常判定へ"| BSCORE
+    MKTREGIME -.->|"BUY閾値を注入\n(3/4/5点)"| BSCORE
+    BSCORE -->|"Yes → 追加"| BUY
+    BSCORE -->|"No → 待機"| WATCH2
+    WATCH2 -.->|"次週スクリーニング"| WATCH
+
+    BUY -->|"保有中チェック"| HOLDCHECK
+    HOLDCHECK --> SSCORE
+    SSCORE -->|"No"| KEEP
+    SSCORE -->|"Yes"| SELL_OUT
+    KEEP -.->|"次日チェック"| HOLDCHECK
+
+    BUY -.->|"🟢 BUY追加通知"| LINE
+    SELL_OUT -.->|"🔴 SELL除外通知"| LINE
+    WATCH -.->|"📋 監視リスト更新通知"| LINE
+
+    classDef weekly fill:#1e2d4a,stroke:#4f8ef7,color:#93bbfd
+    classDef daily  fill:#1a2e22,stroke:#22c55e,color:#86efac
+    classDef alert  fill:#2e1a1a,stroke:#f87171,color:#fca5a5
+    classDef list   fill:#252040,stroke:#a78bfa,color:#c4b5fd
+    classDef notify fill:#2a2040,stroke:#a78bfa,color:#c4b5fd
+    classDef neutral fill:#1e2030,stroke:#4a5568,color:#94a3b8
+    classDef start  fill:#1a2040,stroke:#4f8ef7,color:#93bbfd
+
+    class START start
+    class S1,S2,AI weekly
+    class MKTREGIME,TECH,FAKE,BSCORE,WATCH2 daily
+    class SSCORE,HOLDCHECK daily
+    class SELL_OUT,DISCARD alert
+    class WATCH,BUY list
+    class LINE notify
+    class KEEP neutral
+  </div>
+</div>
+
+<div class="steps-grid">
+
+  <div class="step-card">
+    <div class="step-card-header">
+      <span class="step-badge badge-weekly">① 週次</span>
+      <span class="step-title">監視対象銘柄の選定</span>
+    </div>
+    <p class="step-subtitle">毎週日曜 8:00 / 全1,600社 → 上位20社</p>
+    <ul class="step-items">
+      <li>Step1: 時価総額・営業利益率・PBR・自己資本比率でまず除外</li>
+      <li>Step2-A/B: 年次・四半期EPS成長 ≥25%（J-Quants財務諸表）</li>
+      <li>Step2-C: 売上高成長（年次2期連続プラス + 四半期3期連続OR最新25%以上）</li>
+      <li>Step2-D/E/F: ROE>15% / FCF品質 / 純負債/EBITDA ≤3.0x</li>
+      <li>Step2-G: 7指標スコアリング（ROE・CAGR・FCF・PEG比率・負債・利益率・配当）で上位20社</li>
+      <li>Gemini AI: Top5銘柄の定性分析（Q1〜Q5）・投資テーゼ・ベアケース</li>
+    </ul>
+    <div class="step-output">出力: <span>output/watch_list.md</span></div>
+  </div>
+
+  <div class="step-card">
+    <div class="step-card-header">
+      <span class="step-badge badge-daily">② 日次</span>
+      <span class="step-title">購入銘柄の選定</span>
+    </div>
+    <p class="step-subtitle">平日 19:30 / 監視対象リスト → 購入候補リスト</p>
+    <ul class="step-items">
+      <li>市場レジーム判定（日経225）→ BULL/NEUTRAL/BEAR でBUY閾値を3〜5点に動的変更</li>
+      <li>①監視対象リストの全銘柄にテクニカル分析を実施</li>
+      <li>チャートパターン認識（ブレイクアウト/ダブルボトム/ブルフラッグ/カップ&ハンドル 等）でスコア加算</li>
+      <li>ゴールデンクロス / RSI売られすぎ反転 / MACDプラス転換 でBUYスコア加算</li>
+      <li>BUYスコア ≥BUY閾値 → 購入候補リストに追加（重複除外・最新シグナル日時更新）</li>
+      <li>決算前後3日 / データ不足 → HOLD抑制（追加しない）</li>
+      <li>※チャート状況・市場環境によっては長期間選定が行われない可能性あり</li>
+    </ul>
+    <div class="step-output">出力: <span>output/buy_candidates.md</span>（BUY時のみ追加）</div>
+  </div>
+
+  <div class="step-card">
+    <div class="step-card-header">
+      <span class="step-badge badge-mixed">③ 日次+週次</span>
+      <span class="step-title">売却銘柄の選定</span>
+    </div>
+    <p class="step-subtitle">平日 19:30（テクニカル）+ 日曜（ファンダメンタルズ）</p>
+    <ul class="step-items">
+      <li>軸A（日次）: SELLスコア ≥3点 → 即時除外推奨</li>
+      <li>軸B（週次）: ①と同等のファンダメンタルズ再確認。条件劣化 → 要注意フラグ → 2回連続で除外</li>
+      <li>両軸同時該当 → 即時除外 + 優先度高のLINE通知</li>
+      <li>決算前後3日はテクニカルSELLを抑制（ファンダメンタルズ劣化による除外は実施）</li>
+    </ul>
+    <div class="step-output">処理: <span>buy_candidates.md</span> から削除 / LINE通知</div>
+  </div>
+
+</div>
+
+<footer>
+  <p>日本株投資調査自動化システム v1.3 — 免責事項: このシステムは情報提供を目的とした補助ツールであり、投資助言ではありません。</p>
+</footer>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      primaryColor: '#1e2d4a',
+      primaryTextColor: '#93bbfd',
+      primaryBorderColor: '#4f8ef7',
+      lineColor: '#4a5568',
+      secondaryColor: '#1a2e22',
+      tertiaryColor: '#252040',
+      background: '#1a1d27',
+      mainBkg: '#1a1d27',
+      nodeBorder: '#2e3250',
+      clusterBkg: '#1a1d2760',
+      titleColor: '#e2e8f0',
+      edgeLabelBackground: '#232635',
+      fontFamily: 'Hiragino Sans, Yu Gothic, sans-serif',
+      fontSize: '13px'
+    },
+    flowchart: {
+      curve: 'basis',
+      padding: 20,
+      nodeSpacing: 40,
+      rankSpacing: 60,
+      htmlLabels: true
+    }
+  });
+</script>
+</body>
+</html>
