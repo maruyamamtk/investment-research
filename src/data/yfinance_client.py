@@ -76,6 +76,7 @@ class YFinanceClient:
                 "industry": info.get("industry", ""),
                 "current_price": info.get("currentPrice") or info.get("regularMarketPrice"),
                 "currency": info.get("currency", "JPY"),
+                "website": info.get("website", ""),
             }
             self.cache.set(cache_key, result)
             return result
