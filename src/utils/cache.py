@@ -1,7 +1,10 @@
 import json
+import logging
 import os
 from datetime import datetime, timedelta
 from typing import Any, Optional
+
+_logger = logging.getLogger(__name__)
 
 
 class Cache:
@@ -9,7 +12,6 @@ class Cache:
     未設定の場合はローカルファイルにフォールバックする。"""
 
     def __init__(self, cache_dir: str = "cache"):
-        self.cache_dir = cache_dir
         bucket = os.environ.get("GCS_CACHE_BUCKET")
         if bucket:
             self._backend: _Backend = _GCSBackend(bucket, cache_dir)
@@ -101,7 +103,10 @@ class _GCSBackend(_Backend):
         blob = self._blob(key)
         try:
             entry = json.loads(blob.download_as_text())
-        except Exception:
+        except Exception as e:
+            from google.cloud.exceptions import NotFound
+            if not isinstance(e, NotFound):
+                _logger.warning("GCS cache get failed for key=%s: %s", key, e)
             return None
         return _check_ttl(entry, ttl_hours)
 
