@@ -40,7 +40,28 @@ logger = get_logger("weekly_pipeline")
 
 def load_config(path: str = "config/settings.yaml") -> dict:
     with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
+    # Cloud Run: Secret Managerから注入された環境変数で上書き
+    _override_credentials(cfg)
+    return cfg
+
+
+def _override_credentials(cfg: dict) -> None:
+    """環境変数が設定されていれば settings.yaml の認証情報を上書きする"""
+    env_map = {
+        ("api", "jquants", "email"): "JQUANTS_EMAIL",
+        ("api", "jquants", "password"): "JQUANTS_PASSWORD",
+        ("api", "gemini", "api_key"): "GEMINI_API_KEY",
+        ("api", "line", "channel_access_token"): "LINE_CHANNEL_ACCESS_TOKEN",
+        ("api", "line", "user_id"): "LINE_USER_ID",
+    }
+    for keys, env_var in env_map.items():
+        val = os.environ.get(env_var)
+        if val:
+            node = cfg
+            for k in keys[:-1]:
+                node = node.setdefault(k, {})
+            node[keys[-1]] = val
 
 
 def run_weekly(dry_run: bool = False, force_refresh: bool = False):

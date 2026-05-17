@@ -28,3 +28,6 @@ build/
 
 # macOS
 .DS_Store
+
+# セッション引き継ぎ（個人用）
+HANGOVER.md
