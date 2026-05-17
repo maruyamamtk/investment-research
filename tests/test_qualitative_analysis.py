@@ -1,5 +1,6 @@
 """
-テスト: ClaudeAnalyzer.analyze_qualitative() および _normalize_qualitative()
+テスト: ClaudeAnalyzer.analyze_qualitative(), _normalize_qualitative(),
+        および weekly_pipeline._format_qualitative_section()
 """
 import json
 import os
@@ -212,3 +213,56 @@ class TestAnalyzeQualitative:
         for q in ("q1", "q2", "q3", "q4", "q5"):
             assert isinstance(result[q]["label"], str)
             assert isinstance(result[q]["comment"], str)
+
+
+# ============================================================
+# _format_qualitative_section テスト（weekly_pipeline）
+# ============================================================
+
+class TestFormatQualitativeSection:
+    def setup_method(self):
+        import pipelines.weekly_pipeline as wp
+        self.fmt = wp._format_qualitative_section
+
+    def _sample_qualitative(self):
+        return {
+            "q1": {"label": "Strong", "comment": "参入障壁が高い"},
+            "q2": {"label": "Moderate", "comment": "プロ経営者"},
+            "q3": {"label": "Strong", "comment": "DX需要"},
+            "q4": {"label": "Moderate", "comment": "顧客集中度 | 問題あり"},
+            "q5": {"label": "Weak", "comment": "R&D比率低い"},
+            "overall_score": 7.0,
+            "overall_comment": "総合的に良好",
+        }
+
+    def test_none_returns_empty_list(self):
+        assert self.fmt(None) == []
+
+    def test_returns_list_of_strings(self):
+        result = self.fmt(self._sample_qualitative())
+        assert isinstance(result, list)
+        assert all(isinstance(line, str) for line in result)
+
+    def test_contains_all_q_labels(self):
+        result = self.fmt(self._sample_qualitative())
+        joined = "\n".join(result)
+        for label in ("Q1 事業モデル", "Q2 経営陣", "Q3 市場環境", "Q4 顧客基盤", "Q5 組織力"):
+            assert label in joined
+
+    def test_pipe_in_comment_is_escaped(self):
+        result = self.fmt(self._sample_qualitative())
+        joined = "\n".join(result)
+        # q4 の comment に含まれる | が ｜ に変換されているか
+        assert "顧客集中度 ｜ 問題あり" in joined
+
+    def test_overall_score_is_shown(self):
+        result = self.fmt(self._sample_qualitative())
+        joined = "\n".join(result)
+        assert "7.0 / 10" in joined
+
+    def test_overall_score_none_shows_na(self):
+        q = self._sample_qualitative()
+        q["overall_score"] = None
+        result = self.fmt(q)
+        joined = "\n".join(result)
+        assert "N/A" in joined

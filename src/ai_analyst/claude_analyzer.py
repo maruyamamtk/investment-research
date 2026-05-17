@@ -21,12 +21,13 @@ QUALITATIVE_LABELS = ("Strong", "Moderate", "Weak", "Unknown")
 _QUALITATIVE_SKIP_COMMENT = "（AI分析: APIキー未設定のためスキップ）"
 
 def _qualitative_skipped() -> dict:
+    q = {"label": "Unknown", "comment": _QUALITATIVE_SKIP_COMMENT}
     return {
-        "q1": {"label": "Unknown", "comment": _QUALITATIVE_SKIP_COMMENT},
-        "q2": {"label": "Unknown", "comment": ""},
-        "q3": {"label": "Unknown", "comment": ""},
-        "q4": {"label": "Unknown", "comment": ""},
-        "q5": {"label": "Unknown", "comment": ""},
+        "q1": q.copy(),
+        "q2": q.copy(),
+        "q3": q.copy(),
+        "q4": q.copy(),
+        "q5": q.copy(),
         "overall_score": None,
         "overall_comment": _QUALITATIVE_SKIP_COMMENT,
     }
