@@ -306,6 +306,33 @@ def _is_nan(val) -> bool:
         return False
 
 
+def _build_info_sources_section(df: pd.DataFrame) -> list:
+    """各銘柄の一次情報ソース（EDINET・TDnet・IR）をMarkdownテーブルとして返す。"""
+    lines = [
+        "## 参照すべき一次情報ソース",
+        "",
+        "| 銘柄 | EDINET（有報） | TDnet（適時開示） | IR ページ |",
+        "|------|--------------|----------------|---------|",
+    ]
+    for _, row in df.iterrows():
+        ticker = row.get("ticker", "")
+        name = row.get("name", ticker)
+        label = f"{name}（{ticker}）"
+
+        edinet_url = "https://disclosure.edinet-fsa.go.jp/"
+        tdnet_url = "https://www.release.tdnet.info/"
+        website = row.get("website", "") or ""
+
+        edinet_cell = f"[有報を見る]({edinet_url})"
+        tdnet_cell = f"[開示を見る]({tdnet_url})"
+        ir_cell = f"[IR]({website})" if website else "-"
+
+        lines.append(f"| {label} | {edinet_cell} | {tdnet_cell} | {ir_cell} |")
+
+    lines.append("")
+    return lines
+
+
 def _build_weekly_report(final_df, stock_analyses: list, dry_run: bool) -> str:
     now = datetime.now().strftime("%Y年%m月%d日")
     dry_label = "【DRY-RUN】" if dry_run else ""
@@ -370,7 +397,11 @@ def _build_weekly_report(final_df, stock_analyses: list, dry_run: bool) -> str:
             "",
         ]
 
+    lines += _build_info_sources_section(final_df)
+
     lines += [
+        "---",
+        "",
         "## 免責事項",
         "",
         "> このレポートは自動生成された情報提供を目的としたものであり、投資助言ではありません。",
