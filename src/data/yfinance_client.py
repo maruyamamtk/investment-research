@@ -193,6 +193,9 @@ class YFinanceClient:
             result["name"] = info.get("longName") or info.get("shortName", ticker)
             result["sector"] = info.get("sector", "")
             result["industry"] = info.get("industry", "")
+            # --- Comps分析用補足指標 ---
+            result["dividend_yield"] = info.get("dividendYield")
+            result["eps_growth"] = info.get("earningsGrowth") or info.get("earningsQuarterlyGrowth")
 
             self.cache.set(cache_key, result)
         except Exception as e:
