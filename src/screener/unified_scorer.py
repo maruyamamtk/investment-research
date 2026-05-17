@@ -449,6 +449,11 @@ def calculate_stage2_scores(
             "cf_quality": cf_quality,
             "fcf_positive_years": fcf_years,
             "net_debt_ebitda": net_debt_ebitda,
+            # バリュエーション参考表示（選定条件ではなく参考情報）
+            "ev_revenue": fins.get("ev_revenue"),
+            "ev_ebitda": fins.get("ev_ebitda"),
+            "pe_ratio": fins.get("pe_ratio") if fins.get("pe_ratio") is not None else row.get("pe_ratio"),
+            "pbr": fins.get("pbr") if fins.get("pbr") is not None else row.get("pbr"),
             # 段階2スコア
             "s2_eps_annual": s2_eps_annual,
             "s2_eps_quarterly": s2_eps_quarterly,

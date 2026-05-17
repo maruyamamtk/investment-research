@@ -187,6 +187,8 @@ class YFinanceClient:
             result["operating_margins"] = info.get("operatingMargins")
             result["pe_ratio"] = info.get("trailingPE")
             result["pbr"] = info.get("priceToBook")
+            result["ev_revenue"] = info.get("enterpriseToRevenue")
+            result["ev_ebitda"] = info.get("enterpriseToEbitda")
             result["name"] = info.get("longName") or info.get("shortName", ticker)
             result["sector"] = info.get("sector", "")
             result["industry"] = info.get("industry", "")
