@@ -1,8 +1,7 @@
 """
 翌朝通知パイプライン: 平日 9:00 JST（UTC 0:00）実行
-output/notification_queue.json を読み込み LINE 送信 → キュークリア
+Cache（ローカルまたは GCS）から通知キューを読み込み LINE 送信 → キュークリア
 """
-import json
 import os
 import sys
 from datetime import datetime
@@ -12,10 +11,15 @@ import yaml
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.notification.line_notifier import from_config as line_from_config
+from src.utils.cache import Cache
 from src.utils.credentials import override_credentials
 from src.utils.logger import get_logger
 
 logger = get_logger("notify_morning")
+
+# 通知キューは daily-job と notify-job 間で GCS を経由して受け渡す
+# TTL は 26h（平日 19:30 → 翌朝 9:00 = 約 13.5h、余裕を持たせる）
+_QUEUE_TTL_HOURS = 26
 
 
 def load_config(path: str = "config/settings.yaml") -> dict:
@@ -31,24 +35,14 @@ def run_notify():
     logger.info("=" * 60)
 
     cfg = load_config()
-    queue_path = cfg["output"].get("notification_queue", "output/notification_queue.json")
-
-    if not os.path.exists(queue_path):
-        logger.info(f"通知キューが存在しません: {queue_path}")
-        logger.info("送信する通知はありません。")
-        return
-
-    with open(queue_path, encoding="utf-8") as f:
-        queue = json.load(f)
-
-    notifications = queue.get("notifications", [])
-    queued_at = queue.get("queued_at", "不明")
-    logger.info(f"キュー取得: {len(notifications)}件 (キュー日時: {queued_at})")
+    cache = Cache(cache_dir="cache")
+    notifications = cache.get("notification_queue", ttl_hours=_QUEUE_TTL_HOURS)
 
     if not notifications:
-        logger.info("通知キューが空です。")
-        _clear_queue(queue_path)
+        logger.info("通知キューが存在しないか期限切れです。送信する通知はありません。")
         return
+
+    logger.info(f"キュー取得: {len(notifications)}件")
 
     notifier = line_from_config(cfg)
 
@@ -74,16 +68,8 @@ def run_notify():
             logger.error(f"通知送信エラー (type={ntype}): {e}")
 
     logger.info(f"LINE通知送信完了: {sent}/{len(notifications)}件")
-    _clear_queue(queue_path)
-    logger.info("翌朝通知パイプライン完了")
-
-
-def _clear_queue(queue_path: str) -> None:
-    try:
-        os.remove(queue_path)
-        logger.info(f"通知キューをクリア: {queue_path}")
-    except OSError as e:
-        logger.warning(f"通知キューの削除に失敗: {e}")
+    cache.invalidate("notification_queue")
+    logger.info("通知キューをクリアしました。翌朝通知パイプライン完了")
 
 
 if __name__ == "__main__":

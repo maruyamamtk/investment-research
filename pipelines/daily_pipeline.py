@@ -11,7 +11,6 @@
 """
 import argparse
 import csv
-import json
 import os
 import sys
 import time
@@ -173,9 +172,9 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
         buy_mgr.write_markdown()
 
         # --- 通知キューに保存（翌朝 notify-job が送信）---
-        queue_path = cfg["output"].get("notification_queue", "output/notification_queue.json")
-        _enqueue_notifications(queue_path, added_tickers, removed_tickers, results)
-        logger.info(f"LINE通知をキューに保存: {queue_path}")
+        # GCS_CACHE_BUCKET が設定されている Cloud Run 環境では GCS に保存される
+        _enqueue_notifications(cache, added_tickers, removed_tickers, results)
+        logger.info("LINE通知をキューに保存（notify-job が翌朝9:00に送信）")
 
     # --- Markdown 出力 ---
     md_path = cfg["output"]["daily_signals_md"]
@@ -195,26 +194,19 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
 
 
 def _enqueue_notifications(
-    queue_path: str,
+    cache: Cache,
     added_tickers: list,
     removed_tickers: list,
     all_results: list,
 ) -> None:
-    """翌朝送信用の通知キューをJSONファイルに保存する"""
+    """翌朝送信用の通知キューを Cache（ローカルまたは GCS）に保存する"""
     notifications = []
     for r in added_tickers:
         notifications.append({"type": "buy_candidate_added", "data": r})
     for r in removed_tickers:
         notifications.append({"type": "sell_candidate_removed", "data": r})
     notifications.append({"type": "daily_signals", "data": all_results})
-
-    queue = {
-        "queued_at": datetime.now().isoformat(),
-        "notifications": notifications,
-    }
-    os.makedirs(os.path.dirname(queue_path) if os.path.dirname(queue_path) else ".", exist_ok=True)
-    with open(queue_path, "w", encoding="utf-8") as f:
-        json.dump(queue, f, ensure_ascii=False, indent=2, default=str)
+    cache.set("notification_queue", notifications)
 
 
 def _build_daily_report(results: list, dry_run: bool, market_regime: dict = None) -> str:
