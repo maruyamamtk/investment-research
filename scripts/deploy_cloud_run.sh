@@ -25,6 +25,13 @@ DAILY_SCHEDULE="30 10 * * 1-5"
 
 SCHEDULER_SA="${PROJECT_ID}@appspot.gserviceaccount.com"
 
+# GCS キャッシュバケット（Cloud Run エフェメラル問題の解消）
+# 事前作成: gsutil mb -p ${PROJECT_ID} -l ${REGION} gs://${PROJECT_ID}-investment-cache
+# IAM付与: gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+#           --member=serviceAccount:${PROJECT_ID}@appspot.gserviceaccount.com \
+#           --role=roles/storage.objectAdmin
+GCS_CACHE_BUCKET="${GCS_CACHE_BUCKET:-${PROJECT_ID}-investment-cache}"
+
 # Secret Manager シークレット名（gcloud secrets create で事前に作成が必要）
 # 作成例:
 #   echo -n "value" | gcloud secrets create jquants-email      --data-file=- --project ${PROJECT_ID}
@@ -55,7 +62,7 @@ if gcloud run jobs describe "${WEEKLY_JOB}" --region "${REGION}" --project "${PR
     --project "${PROJECT_ID}" \
     --task-timeout "${TASK_TIMEOUT}" \
     --max-retries "${MAX_RETRIES}" \
-    --set-env-vars "PIPELINE=weekly" \
+    --set-env-vars "PIPELINE=weekly,GCS_CACHE_BUCKET=${GCS_CACHE_BUCKET}" \
     --set-secrets "${SECRET_FLAGS}"
 else
   gcloud run jobs create "${WEEKLY_JOB}" \
@@ -64,7 +71,7 @@ else
     --project "${PROJECT_ID}" \
     --task-timeout "${TASK_TIMEOUT}" \
     --max-retries "${MAX_RETRIES}" \
-    --set-env-vars "PIPELINE=weekly" \
+    --set-env-vars "PIPELINE=weekly,GCS_CACHE_BUCKET=${GCS_CACHE_BUCKET}" \
     --set-secrets "${SECRET_FLAGS}"
 fi
 
@@ -78,7 +85,7 @@ if gcloud run jobs describe "${DAILY_JOB}" --region "${REGION}" --project "${PRO
     --project "${PROJECT_ID}" \
     --task-timeout "${DAILY_TIMEOUT}" \
     --max-retries "${MAX_RETRIES}" \
-    --set-env-vars "PIPELINE=daily" \
+    --set-env-vars "PIPELINE=daily,GCS_CACHE_BUCKET=${GCS_CACHE_BUCKET}" \
     --set-secrets "${SECRET_FLAGS}"
 else
   gcloud run jobs create "${DAILY_JOB}" \
@@ -87,7 +94,7 @@ else
     --project "${PROJECT_ID}" \
     --task-timeout "${DAILY_TIMEOUT}" \
     --max-retries "${MAX_RETRIES}" \
-    --set-env-vars "PIPELINE=daily" \
+    --set-env-vars "PIPELINE=daily,GCS_CACHE_BUCKET=${GCS_CACHE_BUCKET}" \
     --set-secrets "${SECRET_FLAGS}"
 fi
 
