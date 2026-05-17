@@ -13,8 +13,10 @@ IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${IMAGE_NAME}:latest"
 # Cloud Run Jobs 設定
 WEEKLY_JOB="weekly-job"
 DAILY_JOB="daily-job"
+NOTIFY_JOB="notify-job"
 TASK_TIMEOUT="7200s"   # 週次は最大2時間
 DAILY_TIMEOUT="900s"   # 日次は最大15分
+NOTIFY_TIMEOUT="300s"  # 通知は最大5分
 MAX_RETRIES=1
 
 # Cloud Scheduler 設定（UTC）
@@ -22,6 +24,8 @@ MAX_RETRIES=1
 WEEKLY_SCHEDULE="0 23 * * 6"
 # 日次: JST平日 19:30 = UTC平日 10:30
 DAILY_SCHEDULE="30 10 * * 1-5"
+# 翌朝通知: JST平日 9:00 = UTC平日 0:00（火〜土 = UTC 2-6）
+NOTIFY_SCHEDULE="0 0 * * 2-6"
 
 SCHEDULER_SA="${PROJECT_ID}@appspot.gserviceaccount.com"
 
@@ -47,14 +51,14 @@ echo "=== プロジェクト: ${PROJECT_ID} / リージョン: ${REGION} ==="
 
 # ── ステップ 1: イメージビルド & Artifact Registry へ push ──
 echo ""
-echo ">>> [1/4] Docker イメージをビルドして Artifact Registry へ push"
+echo ">>> [1/5] Docker イメージをビルドして Artifact Registry へ push"
 gcloud builds submit . \
   --tag "${IMAGE}" \
   --project "${PROJECT_ID}"
 
 # ── ステップ 2: weekly-job 作成（既存なら更新） ──────────
 echo ""
-echo ">>> [2/4] Cloud Run Jobs: ${WEEKLY_JOB} を作成/更新"
+echo ">>> [2/5] Cloud Run Jobs: ${WEEKLY_JOB} を作成/更新"
 if gcloud run jobs describe "${WEEKLY_JOB}" --region "${REGION}" --project "${PROJECT_ID}" &>/dev/null; then
   gcloud run jobs update "${WEEKLY_JOB}" \
     --image "${IMAGE}" \
@@ -77,7 +81,7 @@ fi
 
 # ── ステップ 3: daily-job 作成（既存なら更新） ───────────
 echo ""
-echo ">>> [3/4] Cloud Run Jobs: ${DAILY_JOB} を作成/更新"
+echo ">>> [3/5] Cloud Run Jobs: ${DAILY_JOB} を作成/更新"
 if gcloud run jobs describe "${DAILY_JOB}" --region "${REGION}" --project "${PROJECT_ID}" &>/dev/null; then
   gcloud run jobs update "${DAILY_JOB}" \
     --image "${IMAGE}" \
@@ -98,12 +102,36 @@ else
     --set-secrets "${SECRET_FLAGS}"
 fi
 
-# ── ステップ 4: Cloud Scheduler ジョブ登録 ───────────────
+# ── ステップ 4: notify-job 作成（既存なら更新） ─────────
 echo ""
-echo ">>> [4/4] Cloud Scheduler ジョブを登録"
+echo ">>> [4/5] Cloud Run Jobs: ${NOTIFY_JOB} を作成/更新"
+if gcloud run jobs describe "${NOTIFY_JOB}" --region "${REGION}" --project "${PROJECT_ID}" &>/dev/null; then
+  gcloud run jobs update "${NOTIFY_JOB}" \
+    --image "${IMAGE}" \
+    --region "${REGION}" \
+    --project "${PROJECT_ID}" \
+    --task-timeout "${NOTIFY_TIMEOUT}" \
+    --max-retries "${MAX_RETRIES}" \
+    --set-env-vars "PIPELINE=notify,GCS_CACHE_BUCKET=${GCS_CACHE_BUCKET}" \
+    --set-secrets "${SECRET_FLAGS}"
+else
+  gcloud run jobs create "${NOTIFY_JOB}" \
+    --image "${IMAGE}" \
+    --region "${REGION}" \
+    --project "${PROJECT_ID}" \
+    --task-timeout "${NOTIFY_TIMEOUT}" \
+    --max-retries "${MAX_RETRIES}" \
+    --set-env-vars "PIPELINE=notify,GCS_CACHE_BUCKET=${GCS_CACHE_BUCKET}" \
+    --set-secrets "${SECRET_FLAGS}"
+fi
+
+# ── ステップ 5: Cloud Scheduler ジョブ登録 ───────────────
+echo ""
+echo ">>> [5/5] Cloud Scheduler ジョブを登録"
 
 _WEEKLY_JOB_URI="https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT_ID}/jobs/${WEEKLY_JOB}:run"
 _DAILY_JOB_URI="https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT_ID}/jobs/${DAILY_JOB}:run"
+_NOTIFY_JOB_URI="https://${REGION}-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/${PROJECT_ID}/jobs/${NOTIFY_JOB}:run"
 
 # 週次スクリーニング（UTC土曜 23:00 = JST日曜 8:00）
 if gcloud scheduler jobs describe "schedule-${WEEKLY_JOB}" --location "${REGION}" --project "${PROJECT_ID}" &>/dev/null; then
@@ -149,12 +177,36 @@ else
     --description "日次シグナル検知 (JST平日19:30)"
 fi
 
+# 翌朝通知（UTC平日 0:00 = JST平日 9:00）
+if gcloud scheduler jobs describe "schedule-${NOTIFY_JOB}" --location "${REGION}" --project "${PROJECT_ID}" &>/dev/null; then
+  gcloud scheduler jobs update http "schedule-${NOTIFY_JOB}" \
+    --location "${REGION}" \
+    --project "${PROJECT_ID}" \
+    --schedule "${NOTIFY_SCHEDULE}" \
+    --uri "${_NOTIFY_JOB_URI}" \
+    --http-method POST \
+    --oauth-service-account-email "${SCHEDULER_SA}" \
+    --time-zone "UTC"
+else
+  gcloud scheduler jobs create http "schedule-${NOTIFY_JOB}" \
+    --location "${REGION}" \
+    --project "${PROJECT_ID}" \
+    --schedule "${NOTIFY_SCHEDULE}" \
+    --uri "${_NOTIFY_JOB_URI}" \
+    --http-method POST \
+    --oauth-service-account-email "${SCHEDULER_SA}" \
+    --time-zone "UTC" \
+    --description "翌朝LINE通知 (JST平日9:00)"
+fi
+
 echo ""
 echo "=== デプロイ完了 ==="
-echo "  イメージ   : ${IMAGE}"
-echo "  weekly-job : ${WEEKLY_SCHEDULE} UTC (JST日曜 8:00)"
-echo "  daily-job  : ${DAILY_SCHEDULE} UTC (JST平日 19:30)"
+echo "  イメージ    : ${IMAGE}"
+echo "  weekly-job  : ${WEEKLY_SCHEDULE} UTC (JST日曜 8:00)"
+echo "  daily-job   : ${DAILY_SCHEDULE} UTC (JST平日 19:30)"
+echo "  notify-job  : ${NOTIFY_SCHEDULE} UTC (JST平日 9:00)"
 echo ""
 echo "手動実行テスト:"
-echo "  gcloud run jobs execute ${WEEKLY_JOB} --region ${REGION} --project ${PROJECT_ID}"
-echo "  gcloud run jobs execute ${DAILY_JOB}  --region ${REGION} --project ${PROJECT_ID}"
+echo "  gcloud run jobs execute ${WEEKLY_JOB}  --region ${REGION} --project ${PROJECT_ID}"
+echo "  gcloud run jobs execute ${DAILY_JOB}   --region ${REGION} --project ${PROJECT_ID}"
+echo "  gcloud run jobs execute ${NOTIFY_JOB}  --region ${REGION} --project ${PROJECT_ID}"

@@ -3,6 +3,7 @@ Cloud Run Jobs エントリポイント。
 環境変数 PIPELINE の値でパイプラインを切り替える。
   PIPELINE=weekly -> run_weekly() を実行
   PIPELINE=daily  -> run_daily() を実行
+  PIPELINE=notify -> run_notify() を実行
 """
 import os
 import sys
@@ -19,9 +20,13 @@ elif PIPELINE == "daily":
     from pipelines.daily_pipeline import run_daily as _run
     def main():
         _run()
+elif PIPELINE == "notify":
+    from pipelines.notify_morning import run_notify as _run
+    def main():
+        _run()
 else:
     print(f"ERROR: 環境変数 PIPELINE が未設定または不明な値です: '{PIPELINE}'")
-    print("  PIPELINE=weekly または PIPELINE=daily を設定してください。")
+    print("  PIPELINE=weekly, PIPELINE=daily, または PIPELINE=notify を設定してください。")
     sys.exit(1)
 
 if __name__ == "__main__":

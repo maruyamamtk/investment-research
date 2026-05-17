@@ -7,7 +7,7 @@
 5. ②購入候補リスト管理（BUY追加 / SELL除外）
 6. AIによるシグナル解説生成
 7. daily_trade_signals.md / signals.csv 出力
-8. LINE通知（BUY追加・SELL除外）
+8. LINE通知キューに保存（翌朝 9:00 JST に notify-job が送信）
 """
 import argparse
 import csv
@@ -23,7 +23,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.data.yfinance_client import YFinanceClient
 from src.technical.signals import add_all_indicators, determine_signal, detect_market_regime, signal_emoji
 from src.ai_analyst.claude_analyzer import ClaudeAnalyzer
-from src.notification.line_notifier import from_config as line_from_config
 from src.screener.buy_candidates import BuyCandidatesManager
 from src.utils.cache import Cache
 from src.utils.credentials import override_credentials
@@ -48,7 +47,6 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
     cfg = load_config()
     cache = Cache(cache_dir="cache")
     yf_client = YFinanceClient(cache=cache, batch_sleep=cfg["data"]["batch_sleep_sec"])
-    notifier = line_from_config(cfg)
     analyzer = ClaudeAnalyzer(
         api_key=cfg["api"]["gemini"]["api_key"],
         model=cfg["api"]["gemini"]["model_daily"],
@@ -173,11 +171,10 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
 
         buy_mgr.write_markdown()
 
-        # --- LINE通知（BUY追加・SELL除外）---
-        for r in added_tickers:
-            notifier.notify_buy_candidate_added(r)
-        for r in removed_tickers:
-            notifier.notify_sell_candidate_removed(r)
+        # --- 通知キューに保存（翌朝 notify-job が送信）---
+        # GCS_CACHE_BUCKET が設定されている Cloud Run 環境では GCS に保存される
+        _enqueue_notifications(cache, added_tickers, removed_tickers, results)
+        logger.info("LINE通知をキューに保存（notify-job が翌朝9:00に送信）")
 
     # --- Markdown 出力 ---
     md_path = cfg["output"]["daily_signals_md"]
@@ -192,12 +189,24 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
     _write_csv(results, csv_path)
     logger.info(f"日次シグナル(CSV)を出力: {csv_path}")
 
-    # --- LINE通知（全シグナルサマリー）---
-    if not dry_run:
-        notifier.notify_daily_signals(results)
-
     logger.info("日次パイプライン完了")
     return results
+
+
+def _enqueue_notifications(
+    cache: Cache,
+    added_tickers: list,
+    removed_tickers: list,
+    all_results: list,
+) -> None:
+    """翌朝送信用の通知キューを Cache（ローカルまたは GCS）に保存する"""
+    notifications = []
+    for r in added_tickers:
+        notifications.append({"type": "buy_candidate_added", "data": r})
+    for r in removed_tickers:
+        notifications.append({"type": "sell_candidate_removed", "data": r})
+    notifications.append({"type": "daily_signals", "data": all_results})
+    cache.set("notification_queue", notifications)
 
 
 def _build_daily_report(results: list, dry_run: bool, market_regime: dict = None) -> str:
