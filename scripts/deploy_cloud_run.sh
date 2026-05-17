@@ -32,13 +32,8 @@ SCHEDULER_SA="${PROJECT_ID}@appspot.gserviceaccount.com"
 #   echo -n "value" | gcloud secrets create gemini-api-key     --data-file=- --project ${PROJECT_ID}
 #   echo -n "value" | gcloud secrets create line-channel-access-token --data-file=- --project ${PROJECT_ID}
 #   echo -n "value" | gcloud secrets create line-user-id       --data-file=- --project ${PROJECT_ID}
-SECRET_FLAGS=(
-  "--set-secrets=JQUANTS_EMAIL=jquants-email:latest"
-  "--set-secrets=JQUANTS_PASSWORD=jquants-password:latest"
-  "--set-secrets=GEMINI_API_KEY=gemini-api-key:latest"
-  "--set-secrets=LINE_CHANNEL_ACCESS_TOKEN=line-channel-access-token:latest"
-  "--set-secrets=LINE_USER_ID=line-user-id:latest"
-)
+# --set-secrets は1フラグにカンマ区切りで指定（複数フラグにすると後続が前を上書きするため）
+SECRET_FLAGS="JQUANTS_EMAIL=jquants-email:latest,JQUANTS_PASSWORD=jquants-password:latest,GEMINI_API_KEY=gemini-api-key:latest,LINE_CHANNEL_ACCESS_TOKEN=line-channel-access-token:latest,LINE_USER_ID=line-user-id:latest"
 # ──────────────────────────────────────────────────────────
 
 echo "=== プロジェクト: ${PROJECT_ID} / リージョン: ${REGION} ==="
@@ -61,7 +56,7 @@ if gcloud run jobs describe "${WEEKLY_JOB}" --region "${REGION}" --project "${PR
     --task-timeout "${TASK_TIMEOUT}" \
     --max-retries "${MAX_RETRIES}" \
     --set-env-vars "PIPELINE=weekly" \
-    "${SECRET_FLAGS[@]}"
+    --set-secrets "${SECRET_FLAGS}"
 else
   gcloud run jobs create "${WEEKLY_JOB}" \
     --image "${IMAGE}" \
@@ -70,7 +65,7 @@ else
     --task-timeout "${TASK_TIMEOUT}" \
     --max-retries "${MAX_RETRIES}" \
     --set-env-vars "PIPELINE=weekly" \
-    "${SECRET_FLAGS[@]}"
+    --set-secrets "${SECRET_FLAGS}"
 fi
 
 # ── ステップ 3: daily-job 作成（既存なら更新） ───────────
@@ -84,7 +79,7 @@ if gcloud run jobs describe "${DAILY_JOB}" --region "${REGION}" --project "${PRO
     --task-timeout "${DAILY_TIMEOUT}" \
     --max-retries "${MAX_RETRIES}" \
     --set-env-vars "PIPELINE=daily" \
-    "${SECRET_FLAGS[@]}"
+    --set-secrets "${SECRET_FLAGS}"
 else
   gcloud run jobs create "${DAILY_JOB}" \
     --image "${IMAGE}" \
@@ -93,7 +88,7 @@ else
     --task-timeout "${DAILY_TIMEOUT}" \
     --max-retries "${MAX_RETRIES}" \
     --set-env-vars "PIPELINE=daily" \
-    "${SECRET_FLAGS[@]}"
+    --set-secrets "${SECRET_FLAGS}"
 fi
 
 # ── ステップ 4: Cloud Scheduler ジョブ登録 ───────────────
