@@ -17,6 +17,10 @@ logger = get_logger("gemini_analyzer")
 # Q1〜Q5 の評価ラベル定義
 QUALITATIVE_LABELS = ("Strong", "Moderate", "Weak", "Unknown")
 
+# ラベルから点数へのマッピング（Strong=4・Moderate=3・Unknown=2・Weak=1）
+# 5項目合計の最大値は20点。label_score = 合計 / 20 * 10 で0〜10点に換算。
+LABEL_SCORE_MAP = {"Strong": 4, "Moderate": 3, "Unknown": 2, "Weak": 1}
+
 # 定性分析の空レスポンス（APIキー未設定・エラー時のフォールバック）
 _QUALITATIVE_SKIP_COMMENT = "（AI分析: APIキー未設定のためスキップ）"
 
@@ -29,6 +33,7 @@ def _qualitative_skipped() -> dict:
         "q4": q.copy(),
         "q5": q.copy(),
         "overall_score": None,
+        "label_score": 5.0,  # 全Unknown: 5×2=10 → 10/20×10=5.0
         "overall_comment": _QUALITATIVE_SKIP_COMMENT,
     }
 
@@ -246,6 +251,17 @@ MACDヒスト: {ind.get('macd_hist')}
 
 # ── ヘルパー ──────────────────────────────────────────────
 
+def _compute_label_score(result: dict) -> float:
+    """Q1〜Q5のラベルから定性スコア（0〜10）を算出する。
+    Strong=4・Moderate=3・Unknown=2・Weak=1 の合計を20点満点で10点スケールに換算。
+    """
+    total = sum(
+        LABEL_SCORE_MAP.get(result.get(q, {}).get("label", "Unknown"), 2)
+        for q in ("q1", "q2", "q3", "q4", "q5")
+    )
+    return round(total / 20 * 10, 1)
+
+
 def _normalize_qualitative(raw: dict) -> dict:
     """GeminiのJSON出力を正規化し、必須キーを補完する。"""
     result = {}
@@ -264,6 +280,7 @@ def _normalize_qualitative(raw: dict) -> dict:
         score = None
 
     result["overall_score"] = score
+    result["label_score"] = _compute_label_score(result)
     result["overall_comment"] = str(raw.get("overall_comment", ""))
     return result
 

@@ -13,7 +13,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.ai_analyst.claude_analyzer import (
     ClaudeAnalyzer,
+    LABEL_SCORE_MAP,
     QUALITATIVE_LABELS,
+    _compute_label_score,
     _normalize_qualitative,
     _qualitative_skipped,
 )
@@ -37,7 +39,10 @@ class TestNormalizeQualitative:
 
     def test_valid_input_returns_all_keys(self):
         result = _normalize_qualitative(self._base_raw())
-        assert set(result.keys()) == {"q1", "q2", "q3", "q4", "q5", "overall_score", "overall_comment"}
+        assert set(result.keys()) == {
+            "q1", "q2", "q3", "q4", "q5",
+            "overall_score", "label_score", "overall_comment",
+        }
 
     def test_each_q_has_label_and_comment(self):
         result = _normalize_qualitative(self._base_raw())
@@ -93,6 +98,16 @@ class TestNormalizeQualitative:
             result = _normalize_qualitative(raw)
             assert result["q1"]["label"] == label
 
+    def test_label_score_is_computed(self):
+        # Strong(4)+Moderate(3)+Strong(4)+Moderate(3)+Weak(1) = 15 → 7.5
+        raw = self._base_raw(label="Strong")  # q1=Strong, q2=Moderate, q3=Strong, q4=Moderate, q5=Weak
+        result = _normalize_qualitative(raw)
+        assert result["label_score"] == 7.5
+
+    def test_label_score_is_float(self):
+        result = _normalize_qualitative(self._base_raw())
+        assert isinstance(result["label_score"], float)
+
 
 # ============================================================
 # _qualitative_skipped テスト
@@ -100,7 +115,10 @@ class TestNormalizeQualitative:
 
 def test_qualitative_skipped_has_all_keys():
     result = _qualitative_skipped()
-    assert set(result.keys()) == {"q1", "q2", "q3", "q4", "q5", "overall_score", "overall_comment"}
+    assert set(result.keys()) == {
+        "q1", "q2", "q3", "q4", "q5",
+        "overall_score", "label_score", "overall_comment",
+    }
 
 
 def test_qualitative_skipped_overall_score_is_none():
@@ -108,10 +126,67 @@ def test_qualitative_skipped_overall_score_is_none():
     assert result["overall_score"] is None
 
 
+def test_qualitative_skipped_label_score_is_5():
+    result = _qualitative_skipped()
+    assert result["label_score"] == 5.0
+
+
 def test_qualitative_skipped_all_labels_unknown():
     result = _qualitative_skipped()
     for q in ("q1", "q2", "q3", "q4", "q5"):
         assert result[q]["label"] == "Unknown"
+
+
+# ============================================================
+# LABEL_SCORE_MAP / _compute_label_score テスト
+# ============================================================
+
+def test_label_score_map_has_all_labels():
+    for label in QUALITATIVE_LABELS:
+        assert label in LABEL_SCORE_MAP
+
+
+def test_label_score_map_strong_highest():
+    assert LABEL_SCORE_MAP["Strong"] > LABEL_SCORE_MAP["Moderate"]
+    assert LABEL_SCORE_MAP["Moderate"] > LABEL_SCORE_MAP["Unknown"]
+    assert LABEL_SCORE_MAP["Unknown"] > LABEL_SCORE_MAP["Weak"]
+
+
+class TestComputeLabelScore:
+    def _make_result(self, labels: tuple) -> dict:
+        keys = ("q1", "q2", "q3", "q4", "q5")
+        return {k: {"label": v, "comment": ""} for k, v in zip(keys, labels)}
+
+    def test_all_strong_returns_10(self):
+        r = self._make_result(("Strong", "Strong", "Strong", "Strong", "Strong"))
+        assert _compute_label_score(r) == 10.0
+
+    def test_all_weak_returns_2_5(self):
+        r = self._make_result(("Weak", "Weak", "Weak", "Weak", "Weak"))
+        assert _compute_label_score(r) == 2.5
+
+    def test_all_unknown_returns_5(self):
+        r = self._make_result(("Unknown", "Unknown", "Unknown", "Unknown", "Unknown"))
+        assert _compute_label_score(r) == 5.0
+
+    def test_all_moderate_returns_7_5(self):
+        r = self._make_result(("Moderate", "Moderate", "Moderate", "Moderate", "Moderate"))
+        assert _compute_label_score(r) == 7.5
+
+    def test_mixed_labels_correct_score(self):
+        # Strong(4)+Moderate(3)+Strong(4)+Moderate(3)+Weak(1) = 15 → 7.5
+        r = self._make_result(("Strong", "Moderate", "Strong", "Moderate", "Weak"))
+        assert _compute_label_score(r) == 7.5
+
+    def test_missing_q_treated_as_unknown(self):
+        # q1のみ、残りはキーなし → Unknown扱いで Unknown=2が4個
+        r = {"q1": {"label": "Strong", "comment": ""}}
+        # Strong(4) + Unknown(2)*4 = 12 → 12/20*10 = 6.0
+        assert _compute_label_score(r) == 6.0
+
+    def test_return_type_is_float(self):
+        r = self._make_result(("Moderate", "Moderate", "Moderate", "Moderate", "Moderate"))
+        assert isinstance(_compute_label_score(r), float)
 
 
 # ============================================================
