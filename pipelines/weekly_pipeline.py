@@ -14,6 +14,7 @@ import os
 import sys
 import time
 from datetime import datetime
+from typing import Optional
 
 import pandas as pd
 import yaml
@@ -147,16 +148,27 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
         cache.set("stage2_results", final_df.to_dict(orient="records"))
 
     # --- Step3: AI分析 ---
-    logger.info("【Step3】AI投資メモ生成")
+    logger.info("【Step3】AI投資メモ生成・定性分析（Q1〜Q5）")
     top5 = final_df.head(5)
     stock_analyses = []
 
     for _, row in top5.iterrows():
         stock_dict = row.to_dict()
-        logger.info(f"  AI分析中: {stock_dict.get('name', row['ticker'])}")
+        name = stock_dict.get('name', row['ticker'])
+        logger.info(f"  AI分析中: {name}")
         memo = analyzer.generate_investment_memo(stock_dict)
         bear = analyzer.generate_bear_case(stock_dict)
-        stock_analyses.append({"data": stock_dict, "memo": memo, "bear_case": bear})
+        qualitative = analyzer.analyze_qualitative(
+            ticker=row["ticker"],
+            company_name=name,
+            stock_data=stock_dict,
+        )
+        stock_analyses.append({
+            "data": stock_dict,
+            "memo": memo,
+            "bear_case": bear,
+            "qualitative": qualitative,
+        })
         time.sleep(1)
 
     # --- Step4: レポート出力 ---
@@ -249,6 +261,44 @@ def _check_axis_b(
     logger.info("  軸B確認完了")
 
 
+def _format_qualitative_section(qualitative: Optional[dict]) -> list:
+    """定性分析（Q1〜Q5）をMarkdownテーブル形式にフォーマットして行リストで返す。"""
+    if not qualitative:
+        return []
+
+    q_labels = {
+        "q1": "Q1 事業モデル・競争優位性",
+        "q2": "Q2 経営陣・ガバナンス",
+        "q3": "Q3 市場環境・成長ポテンシャル",
+        "q4": "Q4 顧客基盤・サプライチェーン",
+        "q5": "Q5 組織力・企業文化",
+    }
+
+    lines = [
+        "**定性分析（Q1〜Q5フレームワーク）**",
+        "",
+        "| 評価軸 | 評価 | 根拠 |",
+        "|--------|------|------|",
+    ]
+    for key, label in q_labels.items():
+        entry = qualitative.get(key, {})
+        ev_label = entry.get("label", "Unknown")
+        comment = entry.get("comment", "").replace("|", "｜")
+        lines.append(f"| {label} | {ev_label} | {comment} |")
+
+    score = qualitative.get("overall_score")
+    score_str = f"{score:.1f} / 10" if score is not None else "N/A"
+    overall = qualitative.get("overall_comment", "")
+    lines += [
+        "",
+        f"**総合定性スコア: {score_str}**",
+        "",
+        overall,
+        "",
+    ]
+    return lines
+
+
 def _is_nan(val) -> bool:
     try:
         return math.isnan(float(val))
@@ -315,6 +365,7 @@ def _build_weekly_report(final_df, stock_analyses: list, dry_run: bool) -> str:
             "",
             analysis["bear_case"],
             "",
+        ] + _format_qualitative_section(analysis.get("qualitative")) + [
             "---",
             "",
         ]
