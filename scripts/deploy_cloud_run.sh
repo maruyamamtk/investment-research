@@ -24,6 +24,16 @@ WEEKLY_SCHEDULE="0 23 * * 6"
 DAILY_SCHEDULE="30 10 * * 1-5"
 
 SCHEDULER_SA="${PROJECT_ID}@appspot.gserviceaccount.com"
+
+# Secret Manager シークレット名（gcloud secrets create で事前に作成が必要）
+# 作成例:
+#   echo -n "value" | gcloud secrets create jquants-email      --data-file=- --project ${PROJECT_ID}
+#   echo -n "value" | gcloud secrets create jquants-password   --data-file=- --project ${PROJECT_ID}
+#   echo -n "value" | gcloud secrets create gemini-api-key     --data-file=- --project ${PROJECT_ID}
+#   echo -n "value" | gcloud secrets create line-channel-access-token --data-file=- --project ${PROJECT_ID}
+#   echo -n "value" | gcloud secrets create line-user-id       --data-file=- --project ${PROJECT_ID}
+# --set-secrets は1フラグにカンマ区切りで指定（複数フラグにすると後続が前を上書きするため）
+SECRET_FLAGS="JQUANTS_EMAIL=jquants-email:latest,JQUANTS_PASSWORD=jquants-password:latest,GEMINI_API_KEY=gemini-api-key:latest,LINE_CHANNEL_ACCESS_TOKEN=line-channel-access-token:latest,LINE_USER_ID=line-user-id:latest"
 # ──────────────────────────────────────────────────────────
 
 echo "=== プロジェクト: ${PROJECT_ID} / リージョン: ${REGION} ==="
@@ -45,7 +55,8 @@ if gcloud run jobs describe "${WEEKLY_JOB}" --region "${REGION}" --project "${PR
     --project "${PROJECT_ID}" \
     --task-timeout "${TASK_TIMEOUT}" \
     --max-retries "${MAX_RETRIES}" \
-    --set-env-vars "PIPELINE=weekly"
+    --set-env-vars "PIPELINE=weekly" \
+    --set-secrets "${SECRET_FLAGS}"
 else
   gcloud run jobs create "${WEEKLY_JOB}" \
     --image "${IMAGE}" \
@@ -53,7 +64,8 @@ else
     --project "${PROJECT_ID}" \
     --task-timeout "${TASK_TIMEOUT}" \
     --max-retries "${MAX_RETRIES}" \
-    --set-env-vars "PIPELINE=weekly"
+    --set-env-vars "PIPELINE=weekly" \
+    --set-secrets "${SECRET_FLAGS}"
 fi
 
 # ── ステップ 3: daily-job 作成（既存なら更新） ───────────
@@ -66,7 +78,8 @@ if gcloud run jobs describe "${DAILY_JOB}" --region "${REGION}" --project "${PRO
     --project "${PROJECT_ID}" \
     --task-timeout "${DAILY_TIMEOUT}" \
     --max-retries "${MAX_RETRIES}" \
-    --set-env-vars "PIPELINE=daily"
+    --set-env-vars "PIPELINE=daily" \
+    --set-secrets "${SECRET_FLAGS}"
 else
   gcloud run jobs create "${DAILY_JOB}" \
     --image "${IMAGE}" \
@@ -74,7 +87,8 @@ else
     --project "${PROJECT_ID}" \
     --task-timeout "${DAILY_TIMEOUT}" \
     --max-retries "${MAX_RETRIES}" \
-    --set-env-vars "PIPELINE=daily"
+    --set-env-vars "PIPELINE=daily" \
+    --set-secrets "${SECRET_FLAGS}"
 fi
 
 # ── ステップ 4: Cloud Scheduler ジョブ登録 ───────────────

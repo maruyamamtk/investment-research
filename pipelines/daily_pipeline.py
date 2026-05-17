@@ -26,6 +26,7 @@ from src.ai_analyst.claude_analyzer import ClaudeAnalyzer
 from src.notification.line_notifier import from_config as line_from_config
 from src.screener.buy_candidates import BuyCandidatesManager
 from src.utils.cache import Cache
+from src.utils.credentials import override_credentials
 from src.utils.logger import get_logger
 
 logger = get_logger("daily_pipeline")
@@ -33,7 +34,10 @@ logger = get_logger("daily_pipeline")
 
 def load_config(path: str = "config/settings.yaml") -> dict:
     with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f)
+        cfg = yaml.safe_load(f)
+    # Cloud Run: Secret Managerから注入された環境変数で上書き
+    override_credentials(cfg)
+    return cfg
 
 
 def run_daily(ticker_override: str = None, dry_run: bool = False):
