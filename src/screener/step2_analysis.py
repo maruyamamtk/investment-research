@@ -26,6 +26,10 @@ def format_step2_table(df: pd.DataFrame) -> str:
         "peg_calc": "PEG比率",
         "net_debt_ebitda": "純負債/EBITDA",
         "operating_margins": "営業利益率",
+        "ev_revenue": "EV/Revenue",
+        "ev_ebitda": "EV/EBITDA",
+        "pe_ratio": "PER",
+        "pbr": "PBR",
         "data_quality_note": "データ品質",
     }
     display = df[[c for c in cols if c in df.columns]].copy()
@@ -46,5 +50,12 @@ def format_step2_table(df: pd.DataFrame) -> str:
         display["PEG比率"] = display["PEG比率"].apply(
             lambda x: f"{x:.2f}" if pd.notna(x) else "N/A"
         )
+    for col in ["EV/Revenue", "EV/EBITDA"]:
+        if col in display.columns:
+            display[col] = display[col].apply(lambda x: f"{x:.1f}x" if pd.notna(x) else "N/A")
+    if "PER" in display.columns:
+        display["PER"] = display["PER"].apply(lambda x: f"{x:.1f}x" if pd.notna(x) else "N/A")
+    if "PBR" in display.columns:
+        display["PBR"] = display["PBR"].apply(lambda x: f"{x:.2f}x" if pd.notna(x) else "N/A")
 
     return display.to_markdown(index=False)
