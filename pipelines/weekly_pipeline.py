@@ -1,8 +1,8 @@
 """
 週次パイプライン: 毎週日曜日 8:00 実行
 1. 全プライム銘柄取得（J-Quants）
-2. Step1: 基本財務フィルタ（yfinance）
-3. Step2: EPS・売上高・ROEフィルタ（J-Quants）+ FCF・財務健全性（yfinance）+ スコアリング
+2. 段階1: yfinance基本情報で5次元速報スコア → 上位200〜400社に絞り込み
+3. 段階2: J-Quants + yfinance詳細で8次元精緻スコア → 13次元統合スコア（0〜100点）
 4. AIによる投資メモ・ベアケース生成（Claude）
 5. watch_list.md 出力（後方互換: weekly_moat_stocks.md シンボリックリンク）
 6. ③売却判断 軸B: 購入候補リストのファンダメンタルズ再確認
@@ -15,14 +15,20 @@ import sys
 import time
 from datetime import datetime
 
+import pandas as pd
 import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.data.jquants_client import JQuantsClient, get_prime_tickers_fallback
 from src.data.yfinance_client import YFinanceClient
-from src.screener.step1_filter import apply_step1_filter
-from src.screener.step2_analysis import apply_step2_analysis, format_step2_table
+from src.screener.unified_scorer import (
+    calculate_stage1_scores,
+    filter_stage1_candidates,
+    calculate_stage2_scores,
+    calculate_total_score,
+)
+from src.screener.step2_analysis import format_step2_table
 from src.screener.buy_candidates import BuyCandidatesManager
 from src.ai_analyst.claude_analyzer import ClaudeAnalyzer
 from src.notification.line_notifier import from_config as line_from_config
@@ -58,7 +64,7 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
     )
 
     if force_refresh:
-        for key in ["step1_results", "step2_results", "watchlist"]:
+        for key in ["stage1_results", "stage2_results", "watchlist"]:
             cache.invalidate(key)
 
     # --- Step0: 銘柄リスト取得 ---
@@ -79,37 +85,28 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
 
     logger.info(f"対象銘柄数: {len(tickers)}件")
 
-    # --- Step1: 基本財務フィルタ ---
-    logger.info("【Step1】基本財務フィルタ（yfinance）")
-    import pandas as pd
-
-    step1_cached = cache.get("step1_results", ttl_hours=cfg["data"]["cache_ttl_hours"]["fundamentals"])
-    if step1_cached:
-        step1_df = pd.DataFrame(step1_cached)
-        logger.info(f"Step1: キャッシュから取得 ({len(step1_df)}件)")
+    # --- 段階1: yfinance基本情報で速報スコア計算 ---
+    logger.info("【段階1】速報スコア計算（yfinance 5次元）")
+    stage1_cached = cache.get("stage1_results", ttl_hours=cfg["data"]["cache_ttl_hours"]["fundamentals"])
+    if stage1_cached:
+        stage1_filtered = pd.DataFrame(stage1_cached)
+        logger.info(f"段階1: キャッシュから取得 ({len(stage1_filtered)}件)")
     else:
-        s1 = cfg["screener"]["step1"]
         basic_info_list = yf_client.get_basic_info_batch(tickers, batch_size=cfg["data"]["batch_size"])
-        step1_df = apply_step1_filter(
-            basic_info_list,
-            min_market_cap=s1["min_market_cap_jpy"],
-            min_operating_margin=s1["min_operating_margin"],
-            min_pbr=s1["min_pbr"],
-            min_equity_ratio=s1["min_equity_ratio"],
-        )
-        cache.set("step1_results", step1_df.to_dict(orient="records"))
+        stage1_df = calculate_stage1_scores(basic_info_list)
+        stage1_filtered = filter_stage1_candidates(stage1_df)
+        cache.set("stage1_results", stage1_filtered.to_dict(orient="records"))
 
-    step1_tickers = step1_df["ticker"].tolist()
+    stage1_tickers = stage1_filtered["ticker"].tolist()
 
-    # --- Step2-前処理: J-Quants財務諸表取得 ---
-    logger.info("【Step2-前処理】J-Quants財務諸表取得（EPS・売上高・ROE）")
+    # --- 段階2-前処理: J-Quants財務諸表取得 ---
+    logger.info("【段階2-前処理】J-Quants財務諸表取得（EPS・売上高・ROE）")
     eps_series_map = {}
 
     if jq_client:
-        # Step1通過銘柄の4桁コードを5桁コードに変換
         step1_codes = []
         ticker_to_code = {}
-        for ticker in step1_tickers:
+        for ticker in stage1_tickers:
             code4 = ticker.replace(".T", "")
             code5 = code4 + "0"
             step1_codes.append(code5)
@@ -119,49 +116,35 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
             step1_codes,
             sleep_sec=cfg["api"]["jquants"].get("rate_limit_delay", 0.15),
         )
-        # ticker形式に変換
         for ticker, code5 in ticker_to_code.items():
             eps_series_map[ticker] = eps_series_map_by_code.get(code5, {"annual": [], "quarterly": []})
     else:
-        logger.warning("J-Quants未設定: EPS/売上高フィルタをスキップします")
+        logger.warning("J-Quants未設定: J-Quantsデータなしで段階2スコアを計算します（欠損値=5点補完）")
 
-    # --- Step2: 精緻分析 ---
-    logger.info("【Step2】精緻分析（EPS・売上・ROE・FCF・スコアリング）")
-    step2_cached = cache.get("step2_results", ttl_hours=cfg["data"]["cache_ttl_hours"]["fundamentals"])
+    # --- 段階2: 精緻スコア計算・13次元統合スコア（0〜100点） ---
+    logger.info("【段階2】精緻スコア計算（J-Quants + yfinance 8次元）→ 統合スコア（0〜100点）")
+    stage2_cached = cache.get("stage2_results", ttl_hours=cfg["data"]["cache_ttl_hours"]["fundamentals"])
 
-    if step2_cached:
-        step2_df = pd.DataFrame(step2_cached)
-        logger.info(f"Step2: キャッシュから取得 ({len(step2_df)}件)")
+    if stage2_cached:
+        final_df = pd.DataFrame(stage2_cached)
+        logger.info(f"段階2: キャッシュから取得 ({len(final_df)}件)")
     else:
-        logger.info(f"Step2詳細財務取得中: {len(step1_tickers)}銘柄...")
-        detailed = []
-        for i, ticker in enumerate(step1_tickers):
+        logger.info(f"詳細財務取得中: {len(stage1_tickers)}銘柄...")
+        detailed_fins_map = {}
+        for i, ticker in enumerate(stage1_tickers):
             if i % 20 == 0:
-                logger.info(f"  詳細財務取得中: {i + 1}/{len(step1_tickers)}")
-            detailed.append(yf_client.get_detailed_financials(ticker))
+                logger.info(f"  詳細財務取得中: {i + 1}/{len(stage1_tickers)}")
+            detailed_fins_map[ticker] = yf_client.get_detailed_financials(ticker)
             if (i + 1) % 30 == 0:
                 time.sleep(cfg["data"]["batch_sleep_sec"])
 
-        s2 = cfg["screener"]["step2"]
-        step2_df = apply_step2_analysis(
-            detailed,
-            eps_series_map=eps_series_map if eps_series_map else None,
-            min_roe=s2["min_roe"],
-            min_eps_annual_growth=s2.get("min_eps_annual_growth", 0.25),
-            min_eps_quarterly_growth=s2.get("min_eps_quarterly_growth", 0.25),
-            min_revenue_growth_latest=s2.get("min_revenue_growth_latest", 0.25),
-            min_fcf_positive_years=s2["min_fcf_positive_years"],
-            min_cf_quality=s2["min_cf_quality"],
-            max_net_debt_ebitda=s2["max_net_debt_ebitda"],
-            max_payout_ratio=s2["max_payout_ratio"],
-            top_n=s2["top_n_candidates"],
-            weights=cfg["screener"]["weights"],
-        )
-        cache.set("step2_results", step2_df.to_dict(orient="records"))
+        stage2_df = calculate_stage2_scores(stage1_filtered, eps_series_map, detailed_fins_map)
+        final_df = calculate_total_score(stage2_df, top_n=cfg["screener"]["step2"].get("top_n_candidates", 20))
+        cache.set("stage2_results", final_df.to_dict(orient="records"))
 
     # --- Step3: AI分析 ---
     logger.info("【Step3】AI投資メモ生成")
-    top5 = step2_df.head(5)
+    top5 = final_df.head(5)
     stock_analyses = []
 
     for _, row in top5.iterrows():
@@ -174,7 +157,7 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
 
     # --- Step4: レポート出力 ---
     logger.info("【Step4】レポート生成")
-    report = _build_weekly_report(step2_df, stock_analyses, dry_run)
+    report = _build_weekly_report(final_df, stock_analyses, dry_run)
     output_path = cfg["output"]["weekly_report"]
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -187,13 +170,12 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
     _ensure_legacy_symlink(output_path, legacy_path)
 
     # --- Step5: ウォッチリスト更新・LINE通知 ---
-    new_watchlist = step2_df["ticker"].head(20).tolist()
+    new_watchlist = final_df["ticker"].head(20).tolist()
     prev_watchlist = cache.get("watchlist", ttl_hours=9999) or []
     cache.set("watchlist", new_watchlist)
     logger.info(f"ウォッチリスト更新: {new_watchlist}")
 
-    # 銘柄名マップ
-    ticker_names = {row["ticker"]: row.get("name", row["ticker"]) for _, row in step2_df.iterrows()}
+    ticker_names = {row["ticker"]: row.get("name", row["ticker"]) for _, row in final_df.iterrows()}
 
     notifier.notify_watchlist_update(
         new_watchlist=new_watchlist,
@@ -204,10 +186,10 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
     # --- Step6: 軸B ファンダメンタルズ再確認 ---
     if not dry_run:
         logger.info("【Step6】③売却判断 軸B: 購入候補リストのファンダメンタルズ再確認")
-        _check_axis_b(buy_mgr, step2_df, new_watchlist, notifier)
+        _check_axis_b(buy_mgr, final_df, new_watchlist, notifier)
 
     logger.info("週次パイプライン完了")
-    return step2_df
+    return final_df
 
 
 def _ensure_legacy_symlink(target: str, link_path: str) -> None:
@@ -217,7 +199,6 @@ def _ensure_legacy_symlink(target: str, link_path: str) -> None:
             os.unlink(link_path)
         elif os.path.exists(link_path):
             os.rename(link_path, link_path + ".bak")
-        # 相対パスでリンク（同一ディレクトリ内）
         rel_target = os.path.basename(target)
         os.symlink(rel_target, link_path)
         logger.info(f"後方互換シンボリックリンク作成: {link_path} → {rel_target}")
@@ -227,7 +208,7 @@ def _ensure_legacy_symlink(target: str, link_path: str) -> None:
 
 def _check_axis_b(
     buy_mgr: "BuyCandidatesManager",
-    step2_df,
+    final_df,
     new_watchlist: list[str],
     notifier,
 ) -> None:
@@ -237,18 +218,14 @@ def _check_axis_b(
     - caution_count >= 2 の場合: 除外 + LINE通知
     - 引き続き条件を満たす場合: caution_count リセット
     """
-    import pandas as pd
-
     candidates = buy_mgr.get_tickers()
     if not candidates:
         logger.info("  購入候補リストは空 — 軸B確認をスキップ")
         return
 
     watch_set = set(new_watchlist)
-    step2_tickers = set(step2_df["ticker"].tolist()) if step2_df is not None and len(step2_df) > 0 else set()
 
     for ticker in candidates:
-        # 監視対象リストから脱落している場合
         degraded = ticker not in watch_set
 
         if degraded:
@@ -275,12 +252,9 @@ def _is_nan(val) -> bool:
         return False
 
 
-def _build_weekly_report(step2_df, stock_analyses: list, dry_run: bool) -> str:
+def _build_weekly_report(final_df, stock_analyses: list, dry_run: bool) -> str:
     now = datetime.now().strftime("%Y年%m月%d日")
     dry_label = "【DRY-RUN】" if dry_run else ""
-
-    all_cond = step2_df[step2_df.get("classification", "") == "全条件"] if "classification" in step2_df.columns else step2_df
-    eps_only = step2_df[step2_df.get("classification", "") == "EPS条件のみ"] if "classification" in step2_df.columns else step2_df.iloc[0:0]
 
     lines = [
         f"# {dry_label}週次スクリーニングレポート",
@@ -290,16 +264,14 @@ def _build_weekly_report(step2_df, stock_analyses: list, dry_run: bool) -> str:
         "",
         "## スクリーニング結果サマリー",
         "",
-        f"- **Step2通過銘柄数**: {len(step2_df)}社",
-        f"  - 全条件銘柄: {len(all_cond)}社",
-        f"  - EPS条件のみ銘柄: {len(eps_only)}社",
-        f"- **おすすめ銘柄（Top5）**: {', '.join(step2_df.head(5)['ticker'].tolist())}",
+        f"- **スクリーニング通過銘柄数**: {len(final_df)}社（13次元統合スコア Top{len(final_df)}）",
+        f"- **おすすめ銘柄（Top5）**: {', '.join(final_df.head(5)['ticker'].tolist())}",
         "",
         "---",
         "",
         "## Top20 スコアランキング",
         "",
-        format_step2_table(step2_df),
+        format_step2_table(final_df),
         "",
         "---",
         "",
@@ -311,22 +283,22 @@ def _build_weekly_report(step2_df, stock_analyses: list, dry_run: bool) -> str:
         d = analysis["data"]
         ticker = d.get("ticker", "")
         name = d.get("name", ticker)
-        score = d.get("total_score")
-        label = d.get("classification", "")
+        score = d.get("total_score_100")
         roe = d.get("roe")
-        cagr = d.get("revenue_cagr")
+        rev_growth = d.get("revenue_annual_growth")
         margin = d.get("operating_margins")
         nd = d.get("net_debt_ebitda")
+        score_str = f"{score:.1f}/100" if score is not None and not _is_nan(score) else "N/A"
 
         lines += [
-            f"### {i}. {name}（{ticker}）　`{label}`",
+            f"### {i}. {name}（{ticker}）",
             "",
-            f"**総合スコア**: {score:.1f}/10  |  **セクター**: {d.get('sector', 'N/A')}",
+            f"**総合スコア**: {score_str}  |  **セクター**: {d.get('sector', 'N/A')}",
             "",
             "| 指標 | 値 |",
             "|------|-----|",
             f"| ROE | {roe:.1%} |" if roe is not None and not _is_nan(roe) else "| ROE | N/A |",
-            f"| 売上高CAGR（3年） | {cagr:.1%} |" if cagr is not None and not _is_nan(cagr) else "| 売上高CAGR | N/A |",
+            f"| 年次売上高成長率 | {rev_growth:.1%} |" if rev_growth is not None and not _is_nan(rev_growth) else "| 年次売上高成長率 | N/A |",
             f"| 営業利益率 | {margin:.1%} |" if margin is not None and not _is_nan(margin) else "| 営業利益率 | N/A |",
             f"| 純負債/EBITDA | {nd:.1f}x |" if nd is not None and not _is_nan(nd) else "| 純負債/EBITDA | N/A |",
             f"| FCFプラス年数 | {d.get('fcf_positive_years', 'N/A')}期 |",

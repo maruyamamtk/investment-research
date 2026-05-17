@@ -460,3 +460,35 @@ def select_final_watchlist(df: pd.DataFrame, top_n: int = 20) -> pd.DataFrame:
     result = df.head(top_n).reset_index(drop=True)
     logger.info(f"最終ウォッチリスト選定: {len(df)}銘柄 → 上位{len(result)}銘柄")
     return result
+
+
+# ============================================================
+# 総合スコア計算（0〜100点）・上位20社選定
+# ============================================================
+
+def calculate_total_score(df: pd.DataFrame, top_n: int = 20) -> pd.DataFrame:
+    """
+    段階1＋段階2の total_score（0〜10）を 0〜100点にスケーリングして
+    total_score_100 列を付与し、スコア降順で上位 top_n 社を返す。
+
+    Args:
+        df: calculate_stage2_scores() の返り値（total_score 列を含む）
+        top_n: 上位選定数（デフォルト 20）
+
+    Returns:
+        pd.DataFrame: total_score_100 列付きの上位 top_n 社（降順ソート済み）
+    """
+    if df.empty:
+        return df
+
+    result = df.copy()
+    result["total_score_100"] = (result["total_score"] * 10.0).round(2)
+    result = result.sort_values("total_score_100", ascending=False).reset_index(drop=True)
+    top = result.head(top_n)
+
+    best = top["total_score_100"].max() if not top.empty else 0.0
+    logger.info(
+        f"総合スコア計算完了: {len(df)}銘柄 → 上位{len(top)}銘柄選定, "
+        f"最高スコア={best:.1f}/100"
+    )
+    return top
