@@ -15,6 +15,7 @@ import sys
 import time
 from datetime import datetime
 
+import pandas as pd
 import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -86,8 +87,6 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
 
     # --- 段階1: yfinance基本情報で速報スコア計算 ---
     logger.info("【段階1】速報スコア計算（yfinance 5次元）")
-    import pandas as pd
-
     stage1_cached = cache.get("stage1_results", ttl_hours=cfg["data"]["cache_ttl_hours"]["fundamentals"])
     if stage1_cached:
         stage1_filtered = pd.DataFrame(stage1_cached)
@@ -289,11 +288,12 @@ def _build_weekly_report(final_df, stock_analyses: list, dry_run: bool) -> str:
         rev_growth = d.get("revenue_annual_growth")
         margin = d.get("operating_margins")
         nd = d.get("net_debt_ebitda")
+        score_str = f"{score:.1f}/100" if score is not None and not _is_nan(score) else "N/A"
 
         lines += [
             f"### {i}. {name}（{ticker}）",
             "",
-            f"**総合スコア**: {score:.1f}/100  |  **セクター**: {d.get('sector', 'N/A')}",
+            f"**総合スコア**: {score_str}  |  **セクター**: {d.get('sector', 'N/A')}",
             "",
             "| 指標 | 値 |",
             "|------|-----|",
