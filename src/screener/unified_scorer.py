@@ -14,7 +14,8 @@ from src.utils.logger import get_logger
 logger = get_logger("unified_scorer")
 
 
-MISSING_SCORE = 5.0  # データ欠損時の代替スコア（0〜10の中間値）
+MISSING_SCORE = 5.0      # データ欠損時の代替スコア（0〜10の中間値）
+MISSING_THRESHOLD = 4   # これ以上の次元が欠損なら "* データ欠損あり" を注記
 
 # 全13次元の重み（合計 = 1.0 = 100%）
 WEIGHTS: dict[str, float] = {
@@ -151,7 +152,7 @@ def calculate_stage1_scores(basic_info_list: list[dict]) -> pd.DataFrame:
         s_mktcap     = score_market_cap(info.get("market_cap"))
         s_payout     = score_payout_ratio(info.get("payout_ratio"))
 
-        # 欠損ログ（初回のみ）
+        # 欠損カウントとログ（初回のみ）
         dim_vals = {
             "operating_margins": info.get("operating_margins"),
             "equity_ratio": equity_ratio,
@@ -160,8 +161,9 @@ def calculate_stage1_scores(basic_info_list: list[dict]) -> pd.DataFrame:
             "payout_ratio": info.get("payout_ratio"),
         }
         missing = [k for k, v in dim_vals.items() if v is None]
+        s1_missing_count = len(missing)
         if missing and ticker not in missing_logged:
-            logger.debug(f"{ticker}: 欠損次元（MISSING_SCORE={MISSING_SCORE}で補完）= {missing}")
+            logger.debug(f"{ticker}: 段階1欠損次元（MISSING_SCORE={MISSING_SCORE}で補完）= {missing}")
             missing_logged.add(ticker)
 
         # 段階1の重み付き合算（5次元のみ）
@@ -183,6 +185,7 @@ def calculate_stage1_scores(basic_info_list: list[dict]) -> pd.DataFrame:
             "s1_market_cap":       s_mktcap,
             "s1_payout_ratio":     s_payout,
             "stage1_raw":          round(stage1_raw, 5),
+            "s1_missing_count":    s1_missing_count,
         })
 
     df = pd.DataFrame(records)
@@ -393,6 +396,22 @@ def calculate_stage2_scores(
         fcf_years = fins.get("fcf_positive_years")
         net_debt_ebitda = fins.get("net_debt_ebitda")
 
+        # 欠損カウントとログ
+        s2_dim_vals = {
+            "eps_annual_growth":       eps_annual_growth,
+            "eps_quarterly_growth":    eps_qtr_growth,
+            "revenue_annual_growth":   rev_annual_growth,
+            "revenue_quarterly_growth":rev_qtr_growth,
+            "roe":                     roe,
+            "cf_quality":              cf_quality,
+            "fcf_positive_years":      fcf_years,
+            "net_debt_ebitda":         net_debt_ebitda,
+        }
+        s2_missing = [k for k, v in s2_dim_vals.items() if v is None]
+        s2_missing_count = len(s2_missing)
+        if s2_missing:
+            logger.debug(f"{ticker}: 段階2欠損次元（MISSING_SCORE={MISSING_SCORE}で補完）= {s2_missing}")
+
         # --- 段階2スコア計算 ---
         s2_eps_annual = score_eps_annual_growth(eps_annual_growth)
         s2_eps_quarterly = score_eps_quarterly_growth(eps_qtr_growth, is_monotone)
@@ -441,6 +460,7 @@ def calculate_stage2_scores(
             "s2_net_debt_ebitda": s2_net_debt,
             "stage2_raw": stage2_raw,
             "total_score": total_score,
+            "s2_missing_count": s2_missing_count,
         })
 
     df = pd.DataFrame(records)
@@ -483,12 +503,21 @@ def calculate_total_score(df: pd.DataFrame, top_n: int = 20) -> pd.DataFrame:
 
     result = df.copy()
     result["total_score_100"] = (result["total_score"] * 10.0).round(2)
+
+    s1_missing = result.get("s1_missing_count", pd.Series(0, index=result.index))
+    s2_missing = result.get("s2_missing_count", pd.Series(0, index=result.index))
+    result["total_missing_count"] = (s1_missing + s2_missing).astype(int)
+    result["data_quality_note"] = result["total_missing_count"].apply(
+        lambda n: "* データ欠損あり" if n >= MISSING_THRESHOLD else ""
+    )
+
     result = result.sort_values("total_score_100", ascending=False).reset_index(drop=True)
     top = result.head(top_n)
 
     best = top["total_score_100"].max() if not top.empty else 0.0
+    missing_any = (top["total_missing_count"] >= MISSING_THRESHOLD).sum()
     logger.info(
         f"総合スコア計算完了: {len(df)}銘柄 → 上位{len(top)}銘柄選定, "
-        f"最高スコア={best:.1f}/100"
+        f"最高スコア={best:.1f}/100, データ欠損あり={missing_any}銘柄"
     )
     return top

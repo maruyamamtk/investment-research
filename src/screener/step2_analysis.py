@@ -26,6 +26,7 @@ def format_step2_table(df: pd.DataFrame) -> str:
         "peg_calc": "PEG比率",
         "net_debt_ebitda": "純負債/EBITDA",
         "operating_margins": "営業利益率",
+        "data_quality_note": "データ品質",
     }
     display = df[[c for c in cols if c in df.columns]].copy()
     display = display.rename(columns=cols)
