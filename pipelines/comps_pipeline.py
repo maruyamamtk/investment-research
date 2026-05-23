@@ -17,6 +17,7 @@ from src.data.yfinance_client import YFinanceClient
 from src.screener.comps_analyzer import generate_comps_report
 from src.utils.cache import Cache
 from src.utils.credentials import override_credentials
+from src.utils.gcs_report import upload_report_to_gcs
 from src.utils.logger import get_logger
 
 logger = get_logger("comps_pipeline")
@@ -109,6 +110,7 @@ def run_comps(top_n: int = 5, dry_run: bool = False):
         f.write(content)
 
     logger.info(f"Compsレポートを出力: {out_path}")
+    upload_report_to_gcs(out_path, logger)
     logger.info("Compsパイプライン完了")
     return out_path
 

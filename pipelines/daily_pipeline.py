@@ -26,6 +26,7 @@ from src.ai_analyst.claude_analyzer import ClaudeAnalyzer
 from src.screener.buy_candidates import BuyCandidatesManager
 from src.utils.cache import Cache
 from src.utils.credentials import override_credentials
+from src.utils.gcs_report import upload_report_to_gcs
 from src.utils.logger import get_logger
 
 logger = get_logger("daily_pipeline")
@@ -173,6 +174,7 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
                 removed_tickers.append(r)
 
         buy_mgr.write_markdown()
+        upload_report_to_gcs(buy_mgr.md_path, logger)
 
         # --- 通知キューに保存（翌朝 notify-job が送信）---
         # GCS_CACHE_BUCKET が設定されている Cloud Run 環境では GCS に保存される
@@ -187,10 +189,12 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(_build_daily_report(results, dry_run, market_regime))
     logger.info(f"日次シグナル(Markdown)を出力: {md_path}")
+    upload_report_to_gcs(md_path, logger)
 
     # --- CSV 出力 ---
     _write_csv(results, csv_path)
     logger.info(f"日次シグナル(CSV)を出力: {csv_path}")
+    upload_report_to_gcs(csv_path, logger)
 
     logger.info("日次パイプライン完了")
     return results

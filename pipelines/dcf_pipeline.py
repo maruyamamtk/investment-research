@@ -22,6 +22,7 @@ from src.screener.dcf_calculator import (
 )
 from src.utils.cache import Cache
 from src.utils.credentials import override_credentials
+from src.utils.gcs_report import upload_report_to_gcs
 from src.utils.logger import get_logger
 
 logger = get_logger("dcf_pipeline")
@@ -104,6 +105,7 @@ def run_dcf(
         f.write(content)
 
     logger.info(f"DCFレポートを出力: {out_path}")
+    upload_report_to_gcs(out_path, logger)
     logger.info("DCFパイプライン完了")
     return out_path
 
