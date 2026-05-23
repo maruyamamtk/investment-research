@@ -2,7 +2,7 @@
 Analyst Agent — 定性分析・投資テーゼ・レポート生成
 
 責務:
-- Top5銘柄の投資メモ・ベアケース・Q1〜Q5定性分析生成（Gemini API）
+- TopN銘柄の投資メモ・ベアケース・Q1〜Q5定性分析生成（Gemini API）
 - 分析結果を構造化データとして出力
 """
 from __future__ import annotations
@@ -17,14 +17,12 @@ from src.utils.logger import get_logger
 
 logger = get_logger("analyst_agent")
 
-_TOP_N_ANALYSIS = 5
-
 
 class AnalystAgent(BaseAgent):
     """定性分析・投資テーゼ生成エージェント
 
     ctx.shared への書き込み:
-        stock_analyses (list[dict]): Top5銘柄の分析結果
+        stock_analyses (list[dict]): TopN銘柄の分析結果
             各要素: {data, memo, bear_case, qualitative}
     """
 
@@ -40,10 +38,13 @@ class AnalystAgent(BaseAgent):
         if final_df is None or final_df.empty:
             return AgentResult.fail("final_df がありません — ScreenerAgent を先に実行してください")
 
-        top_n = final_df.head(_TOP_N_ANALYSIS)
+        ai_top_n = ctx.config.get("screener", {}).get("step2", {}).get("ai_analysis_top_n", 20)
+        top_stocks = final_df.head(ai_top_n)
         stock_analyses = []
 
-        for _, row in top_n.iterrows():
+        logger.info(f"  AI分析対象: Top{ai_top_n}銘柄")
+
+        for _, row in top_stocks.iterrows():
             stock_dict = row.to_dict()
             name = stock_dict.get("name", row["ticker"])
             ticker = row["ticker"]
@@ -64,7 +65,7 @@ class AnalystAgent(BaseAgent):
                 "bear_case": bear,
                 "qualitative": qualitative,
             })
-            time.sleep(1)
+            time.sleep(3)  # RPM制限対策: Top20では最大60呼び出しになるため余裕を持たせる
 
         ctx.shared["stock_analyses"] = stock_analyses
 
