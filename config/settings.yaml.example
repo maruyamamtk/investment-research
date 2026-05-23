@@ -52,6 +52,7 @@ screener:
     max_net_debt_ebitda: 3.0
     max_payout_ratio: 0.70
     top_n_candidates: 20
+    ai_analysis_top_n: 20               # AI定性分析の対象銘柄数（投資メモ・ベアケース・Q1〜Q5）
 
   weights:
     roe: 0.25

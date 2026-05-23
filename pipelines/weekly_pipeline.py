@@ -161,11 +161,12 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
         cache.set(stage2_key, final_df.to_dict(orient="records"))
 
     # --- Step3: AI分析 ---
-    logger.info("【Step3】AI投資メモ生成・定性分析（Q1〜Q5）")
-    top5 = final_df.head(5)
+    ai_top_n = cfg["screener"]["step2"].get("ai_analysis_top_n", 20)
+    logger.info(f"【Step3】AI投資メモ生成・定性分析（Q1〜Q5）Top{ai_top_n}銘柄")
+    top_stocks = final_df.head(ai_top_n)
     stock_analyses = []
 
-    for _, row in top5.iterrows():
+    for _, row in top_stocks.iterrows():
         stock_dict = row.to_dict()
         name = stock_dict.get('name', row['ticker'])
         logger.info(f"  AI分析中: {name}")
@@ -182,11 +183,11 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
             "bear_case": bear,
             "qualitative": qualitative,
         })
-        time.sleep(1)
+        time.sleep(3)  # RPM制限対策: Top20では最大60呼び出しになるため余裕を持たせる
 
     # --- Step4: レポート出力 ---
     logger.info("【Step4】レポート生成")
-    report = _build_weekly_report(final_df, stock_analyses, dry_run)
+    report = _build_weekly_report(final_df, stock_analyses, dry_run, ai_top_n)
     output_path = cfg["output"]["weekly_report"]
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -351,7 +352,7 @@ def _build_info_sources_section(df: pd.DataFrame) -> list:
     return lines
 
 
-def _build_weekly_report(final_df, stock_analyses: list, dry_run: bool) -> str:
+def _build_weekly_report(final_df, stock_analyses: list, dry_run: bool, ai_top_n: int = 20) -> str:
     now = datetime.now().strftime("%Y年%m月%d日")
     dry_label = "【DRY-RUN】" if dry_run else ""
 
@@ -368,13 +369,13 @@ def _build_weekly_report(final_df, stock_analyses: list, dry_run: bool) -> str:
         "",
         "---",
         "",
-        "## Top20 スコアランキング",
+        f"## Top{len(final_df)} スコアランキング",
         "",
         format_step2_table(final_df),
         "",
         "---",
         "",
-        "## おすすめ銘柄 詳細分析（Top5）",
+        f"## 全銘柄 詳細分析（Top{ai_top_n}）",
         "",
     ]
 

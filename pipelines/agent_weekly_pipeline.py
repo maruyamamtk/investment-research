@@ -145,13 +145,13 @@ def _build_report(final_df, stock_analyses: list, dry_run: bool) -> str:
         "",
         "---",
         "",
-        "## Top20 スコアランキング",
+        f"## Top{len(final_df)} スコアランキング",
         "",
         format_step2_table(final_df),
         "",
         "---",
         "",
-        "## おすすめ銘柄 詳細分析（Top5）",
+        f"## 全銘柄 詳細分析（Top{len(stock_analyses)}）",
         "",
     ]
 
