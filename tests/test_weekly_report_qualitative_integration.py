@@ -101,9 +101,9 @@ class TestBuildWeeklyReportQualitativeIntegration:
         assert "テスト企業0" in report
         assert "| 評価軸 | 評価 | 根拠 |" in report
 
-    def test_report_contains_top5_section_heading(self):
+    def test_report_contains_detail_section_heading(self):
         report = self._build(_sample_qualitative())
-        assert "おすすめ銘柄 詳細分析" in report
+        assert "全銘柄 詳細分析" in report
 
     def test_report_contains_disclaimer(self):
         report = self._build(_sample_qualitative())

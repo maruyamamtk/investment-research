@@ -58,17 +58,28 @@ class TestAnalystAgentNoData:
 
 
 class TestAnalystAgentSuccess:
-    def test_analyzes_top5(self, mock_analyzer):
+    def test_analyzes_top_n_from_config(self, mock_analyzer):
         agent = AnalystAgent(analyzer=mock_analyzer)
-        ctx = AgentContext()
+        ctx = AgentContext(config={"screener": {"step2": {"ai_analysis_top_n": 5}}})
         ctx.shared["final_df"] = _make_final_df(10)
         result = agent.run(ctx)
 
         assert result.success
         assert "stock_analyses" in ctx.shared
-        # Top5のみ分析
+        # 設定値 ai_analysis_top_n=5 に従い5銘柄のみ分析
         assert len(ctx.shared["stock_analyses"]) == 5
         assert result.data["analyzed_count"] == 5
+
+    def test_analyzes_top20_by_default(self, mock_analyzer):
+        agent = AnalystAgent(analyzer=mock_analyzer)
+        ctx = AgentContext()  # config 未設定 → デフォルト20
+        ctx.shared["final_df"] = _make_final_df(20)
+        result = agent.run(ctx)
+
+        assert result.success
+        # デフォルトは20銘柄
+        assert len(ctx.shared["stock_analyses"]) == 20
+        assert result.data["analyzed_count"] == 20
 
     def test_analysis_structure(self, mock_analyzer):
         agent = AnalystAgent(analyzer=mock_analyzer)
