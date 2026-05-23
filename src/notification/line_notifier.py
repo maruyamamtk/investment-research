@@ -152,6 +152,48 @@ class LineNotifier:
         )
         return self._send([self._text(msg)])
 
+    # ---- 決算レビュー通知 ----
+
+    def notify_earnings_review(self, summaries: list[dict]) -> bool:
+        """決算Beat/Miss結果をLINEで通知する"""
+        if not summaries:
+            return False
+
+        lines = [f"📣 決算レビュー速報（{_today()}）\n"]
+
+        beat = [s for s in summaries if s.get("verdict") == "Beat"]
+        miss = [s for s in summaries if s.get("verdict") == "Miss"]
+        meet = [s for s in summaries if s.get("verdict") == "Meet"]
+        na = [s for s in summaries if s.get("verdict") == "N/A"]
+
+        if beat:
+            lines.append("🟢 Beat（予想超過）")
+            for s in beat:
+                sp = s.get("surprise_pct")
+                sp_str = f" (+{sp:.1f}%)" if sp is not None else ""
+                lines.append(f"  {s.get('name', s['ticker'])}（{s['ticker']}）{sp_str}")
+
+        if miss:
+            lines.append("\n🔴 Miss（予想未達）")
+            for s in miss:
+                sp = s.get("surprise_pct")
+                sp_str = f" ({sp:.1f}%)" if sp is not None else ""
+                lines.append(f"  {s.get('name', s['ticker'])}（{s['ticker']}）{sp_str}")
+
+        if meet:
+            lines.append("\n🟡 Meet（予想並み）")
+            for s in meet:
+                lines.append(f"  {s.get('name', s['ticker'])}（{s['ticker']}）")
+
+        if na:
+            lines.append("\n⚪ データ未取得")
+            for s in na:
+                lines.append(f"  {s.get('name', s['ticker'])}（{s['ticker']}）")
+
+        lines.append("\n詳細は earnings_review_*.md を確認してください。")
+
+        return self._send([self._text("\n".join(lines))])
+
     # ---- エラー通知 ----
 
     def notify_error(self, pipeline: str, error_msg: str) -> bool:
