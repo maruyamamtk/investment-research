@@ -1,6 +1,6 @@
 ---
 name: deploy
-description: Cloud Run Jobs をビルド・デプロイし、daily-job で動作確認まで実施する
+description: Cloud Run Jobs をビルド・デプロイし、weekly-job と daily-job で動作確認まで実施する
 disable-model-invocation: true
 ---
 
@@ -55,7 +55,28 @@ cd /Users/michika_maruyama/Desktop/investment_research
 bash scripts/deploy_cloud_run.sh
 ```
 
-## Step 5: 動作確認（daily-job を手動実行）
+## Step 5: 動作確認（weekly-job・daily-job を順に手動実行）
+
+### weekly-job
+
+```bash
+gcloud run jobs execute weekly-job \
+  --region asia-northeast1 \
+  --project keiba-prediction-1768734113 \
+  --wait
+```
+
+失敗した場合は以下でログを確認して原因を報告する:
+
+```bash
+gcloud logging read \
+  'resource.type="cloud_run_job" AND resource.labels.job_name="weekly-job" AND severity>=ERROR' \
+  --limit=20 \
+  --project=keiba-prediction-1768734113 \
+  --format="table(timestamp,textPayload)"
+```
+
+### daily-job
 
 ```bash
 gcloud run jobs execute daily-job \
@@ -64,7 +85,6 @@ gcloud run jobs execute daily-job \
   --wait
 ```
 
-終了コード 0 なら「✅ デプロイ＆動作確認 完了」と報告する。
 失敗した場合は以下でログを確認して原因を報告する:
 
 ```bash
@@ -74,3 +94,5 @@ gcloud logging read \
   --project=keiba-prediction-1768734113 \
   --format="table(timestamp,textPayload)"
 ```
+
+両ジョブとも終了コード 0 なら「✅ デプロイ＆動作確認 完了（weekly-job・daily-job）」と報告する。
