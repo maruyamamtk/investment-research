@@ -72,8 +72,14 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
         md_path=cfg["output"].get("buy_candidates_md", "output/buy_candidates.md"),
     )
 
+    # dry_run と正規実行でキャッシュキーを分離し、30銘柄キャッシュが本番結果を汚染しないようにする
+    cache_prefix = "dryrun_" if dry_run else ""
+    stage1_key = f"{cache_prefix}stage1_results"
+    stage2_key = f"{cache_prefix}stage2_results"
+    watchlist_key = f"{cache_prefix}watchlist"
+
     if force_refresh:
-        for key in ["stage1_results", "stage2_results", "watchlist"]:
+        for key in [stage1_key, stage2_key, watchlist_key]:
             cache.invalidate(key)
 
     # --- Step0: 銘柄リスト取得 ---
@@ -96,7 +102,7 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
 
     # --- 段階1: yfinance基本情報で速報スコア計算 ---
     logger.info("【段階1】速報スコア計算（yfinance 5次元）")
-    stage1_cached = cache.get("stage1_results", ttl_hours=cfg["data"]["cache_ttl_hours"]["fundamentals"])
+    stage1_cached = cache.get(stage1_key, ttl_hours=cfg["data"]["cache_ttl_hours"]["fundamentals"])
     if stage1_cached:
         stage1_filtered = pd.DataFrame(stage1_cached)
         logger.info(f"段階1: キャッシュから取得 ({len(stage1_filtered)}件)")
@@ -104,7 +110,7 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
         basic_info_list = yf_client.get_basic_info_batch(tickers, batch_size=cfg["data"]["batch_size"])
         stage1_df = calculate_stage1_scores(basic_info_list)
         stage1_filtered = filter_stage1_candidates(stage1_df)
-        cache.set("stage1_results", stage1_filtered.to_dict(orient="records"))
+        cache.set(stage1_key, stage1_filtered.to_dict(orient="records"))
 
     stage1_tickers = stage1_filtered["ticker"].tolist()
 
@@ -132,7 +138,7 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
 
     # --- 段階2: 精緻スコア計算・13次元統合スコア（0〜100点） ---
     logger.info("【段階2】精緻スコア計算（J-Quants + yfinance 8次元）→ 統合スコア（0〜100点）")
-    stage2_cached = cache.get("stage2_results", ttl_hours=cfg["data"]["cache_ttl_hours"]["fundamentals"])
+    stage2_cached = cache.get(stage2_key, ttl_hours=cfg["data"]["cache_ttl_hours"]["fundamentals"])
 
     if stage2_cached:
         final_df = pd.DataFrame(stage2_cached)
@@ -152,7 +158,7 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
 
         stage2_df = calculate_stage2_scores(stage1_filtered, eps_series_map, detailed_fins_map)
         final_df = calculate_total_score(stage2_df, top_n=cfg["screener"]["step2"].get("top_n_candidates", 20))
-        cache.set("stage2_results", final_df.to_dict(orient="records"))
+        cache.set(stage2_key, final_df.to_dict(orient="records"))
 
     # --- Step3: AI分析 ---
     logger.info("【Step3】AI投資メモ生成・定性分析（Q1〜Q5）")
@@ -197,8 +203,8 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
 
     # --- Step5: ウォッチリスト更新・LINE通知 ---
     new_watchlist = final_df["ticker"].head(20).tolist()
-    prev_watchlist = cache.get("watchlist", ttl_hours=9999) or []
-    cache.set("watchlist", new_watchlist)
+    prev_watchlist = cache.get(watchlist_key, ttl_hours=9999) or []
+    cache.set(watchlist_key, new_watchlist)
     logger.info(f"ウォッチリスト更新: {new_watchlist}")
 
     ticker_names = {row["ticker"]: row.get("name", row["ticker"]) for _, row in final_df.iterrows()}

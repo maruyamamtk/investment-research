@@ -45,8 +45,13 @@ class ResearcherAgent(BaseAgent):
         dry_run = ctx.dry_run
         force_refresh = ctx.force_refresh
 
+        # dry_run と正規実行でキャッシュキーを分離し、30銘柄キャッシュが本番結果を汚染しないようにする
+        cache_prefix = "dryrun_" if dry_run else ""
+        stage1_key = f"{cache_prefix}stage1_results"
+        watchlist_key = f"{cache_prefix}watchlist"
+
         if force_refresh:
-            for key in ("stage1_results", "watchlist"):
+            for key in (stage1_key, watchlist_key):
                 self._cache.invalidate(key)
 
         # --- 銘柄リスト取得 ---
@@ -66,12 +71,10 @@ class ResearcherAgent(BaseAgent):
 
         # --- 段階1: yfinance速報スコア ---
         ttl_h = cfg["data"]["cache_ttl_hours"]["fundamentals"]
-        stage1_cached = self._cache.get("stage1_results", ttl_hours=ttl_h)
+        stage1_cached = self._cache.get(stage1_key, ttl_hours=ttl_h)
 
         if stage1_cached:
             stage1_filtered = pd.DataFrame(stage1_cached)
-            if dry_run:
-                stage1_filtered = stage1_filtered.head(30)
             logger.info(f"段階1: キャッシュから取得 ({len(stage1_filtered)}件)")
         else:
             basic_info_list = self._yf.get_basic_info_batch(
@@ -79,7 +82,7 @@ class ResearcherAgent(BaseAgent):
             )
             stage1_df = calculate_stage1_scores(basic_info_list)
             stage1_filtered = filter_stage1_candidates(stage1_df)
-            self._cache.set("stage1_results", stage1_filtered.to_dict(orient="records"))
+            self._cache.set(stage1_key, stage1_filtered.to_dict(orient="records"))
             logger.info(f"段階1: {len(stage1_filtered)}件に絞り込み")
 
         stage1_tickers = stage1_filtered["ticker"].tolist()

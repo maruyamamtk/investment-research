@@ -98,9 +98,11 @@ def run_agent_weekly(dry_run: bool = False, force_refresh: bool = False):
     _ensure_legacy_symlink(output_path, legacy_path)
 
     # --- LINE通知 ---
+    # dry_run と正規実行でキャッシュキーを分離し、dry_runの前回リストが本番通知に混入しないようにする
+    watchlist_key = "dryrun_watchlist" if dry_run else "watchlist"
     new_watchlist = final_df["ticker"].head(20).tolist()
-    prev_watchlist = cache.get("watchlist", ttl_hours=9999) or []
-    cache.set("watchlist", new_watchlist)
+    prev_watchlist = cache.get(watchlist_key, ttl_hours=9999) or []
+    cache.set(watchlist_key, new_watchlist)
 
     ticker_names = {row["ticker"]: row.get("name", row["ticker"]) for _, row in final_df.iterrows()}
     notifier.notify_watchlist_update(

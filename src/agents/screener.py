@@ -47,10 +47,14 @@ class ScreenerAgent(BaseAgent):
         stage1_tickers = stage1_filtered["ticker"].tolist()
         ttl_h = cfg["data"]["cache_ttl_hours"]["fundamentals"]
 
-        if ctx.force_refresh:
-            self._cache.invalidate("stage2_results")
+        # dry_run と正規実行でキャッシュキーを分離し、30銘柄キャッシュが本番結果を汚染しないようにする
+        cache_prefix = "dryrun_" if ctx.dry_run else ""
+        stage2_key = f"{cache_prefix}stage2_results"
 
-        stage2_cached = self._cache.get("stage2_results", ttl_hours=ttl_h)
+        if ctx.force_refresh:
+            self._cache.invalidate(stage2_key)
+
+        stage2_cached = self._cache.get(stage2_key, ttl_hours=ttl_h)
 
         if stage2_cached:
             final_df = pd.DataFrame(stage2_cached)
@@ -68,7 +72,7 @@ class ScreenerAgent(BaseAgent):
             stage2_df = calculate_stage2_scores(stage1_filtered, eps_series_map, detailed_fins_map)
             top_n = cfg["screener"]["step2"].get("top_n_candidates", 20)
             final_df = calculate_total_score(stage2_df, top_n=top_n)
-            self._cache.set("stage2_results", final_df.to_dict(orient="records"))
+            self._cache.set(stage2_key, final_df.to_dict(orient="records"))
             logger.info(f"段階2: {len(final_df)}件に絞り込み（上位{top_n}社）")
 
         ctx.shared["final_df"] = final_df
