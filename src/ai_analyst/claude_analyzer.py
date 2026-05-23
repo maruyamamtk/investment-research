@@ -5,6 +5,7 @@ Gemini AI アナリスト
 """
 import json
 import os
+import re
 from typing import Optional
 
 import google.genai as genai
@@ -81,7 +82,11 @@ class ClaudeAnalyzer:
                     response_mime_type="application/json",
                 ),
             )
-            return json.loads(response.text)
+            text = response.text.strip()
+            # Gemini がマークダウンコードブロックで囲んで返す場合を除去
+            text = re.sub(r'^```(?:json)?\s*', '', text)
+            text = re.sub(r'\s*```$', '', text.strip())
+            return json.loads(text)
         except Exception as e:
             logger.error(f"Gemini JSON API呼び出し失敗: {e}")
             return None
@@ -218,7 +223,7 @@ Q5: 組織力と企業文化
 overall_score は Q1〜Q5 の評価を総合した 0〜10 の数値（小数点1桁）。
 overall_comment は総合評価の要約（50〜100字）。
 """
-        result = self._call_json(system, user, max_tokens=1500)
+        result = self._call_json(system, user, max_tokens=2500)
         if not result:
             return _qualitative_skipped()
 

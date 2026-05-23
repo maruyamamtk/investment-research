@@ -1,0 +1,26 @@
+# .gitignore をベースに Cloud Build 用除外設定を定義。
+# config/settings.yaml は認証情報を空にした上でイメージに含める
+# （実際の認証情報は Cloud Run が Secret Manager 経由で環境変数として注入する）
+
+config/settings.local.yaml
+config/portfolio.yaml
+.env
+.env.*
+
+.claude/settings.local.json
+
+cache/
+output/
+logs/
+
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+
+.DS_Store
+HANGOVER.md

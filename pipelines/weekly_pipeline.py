@@ -41,8 +41,11 @@ logger = get_logger("weekly_pipeline")
 
 
 def load_config(path: str = "config/settings.yaml") -> dict:
-    with open(path, encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
+    try:
+        with open(path, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        cfg = {}
     # Cloud Run: Secret Managerから注入された環境変数で上書き
     override_credentials(cfg)
     return cfg

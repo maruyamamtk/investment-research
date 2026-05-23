@@ -27,8 +27,11 @@ PREV_ESTIMATES_CACHE_KEY = "earnings_prev_estimates"
 
 
 def load_config(path: str = "config/settings.yaml") -> dict:
-    with open(path, encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
+    try:
+        with open(path, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        cfg = {}
     override_credentials(cfg)
     return cfg
 

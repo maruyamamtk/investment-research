@@ -28,8 +28,11 @@ logger = get_logger("dcf_pipeline")
 
 
 def load_config(path: str = "config/settings.yaml") -> dict:
-    with open(path, encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
+    try:
+        with open(path, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        cfg = {}
     override_credentials(cfg)
     return cfg
 
