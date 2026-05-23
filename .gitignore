@@ -1,6 +1,7 @@
 # APIキー・認証情報（絶対にコミットしない）
 config/settings.yaml
 config/settings.local.yaml
+config/portfolio.yaml
 .env
 .env.*
 
