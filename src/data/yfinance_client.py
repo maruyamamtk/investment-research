@@ -203,6 +203,71 @@ class YFinanceClient:
 
         return result
 
+    # ---- DCFモデル用データ取得 ----
+
+    def get_dcf_data(self, ticker: str) -> dict:
+        """DCFモデル計算に必要なデータを取得する。
+
+        Returns:
+            dict with keys:
+                ticker, name, current_price, shares_outstanding,
+                beta, market_cap, total_debt, total_cash, net_debt,
+                fcf_list (最新順), latest_fcf, revenue_growth, ebitda
+        """
+        cache_key = f"dcf_{ticker.replace('.', '_')}"
+        cached = self.cache.get(cache_key, ttl_hours=168)
+        if cached:
+            return cached
+
+        result: dict = {"ticker": ticker}
+        try:
+            t = yf.Ticker(ticker)
+            info = t.info or {}
+
+            result["name"] = info.get("longName") or info.get("shortName", ticker)
+            result["current_price"] = info.get("currentPrice") or info.get("regularMarketPrice")
+            result["shares_outstanding"] = info.get("sharesOutstanding")
+            result["beta"] = info.get("beta")
+            result["market_cap"] = info.get("marketCap")
+            result["total_debt"] = info.get("totalDebt") or 0
+            result["total_cash"] = info.get("totalCash") or 0
+            result["net_debt"] = result["total_debt"] - result["total_cash"]
+            result["ebitda"] = info.get("ebitda")
+            result["revenue_growth"] = info.get("revenueGrowth")
+
+            # --- 歴史的FCFリスト（最新順）---
+            fcf_list = []
+            try:
+                cf = t.cashflow
+                if cf is not None and not cf.empty:
+                    ocf_row = cf.loc["Operating Cash Flow"] if "Operating Cash Flow" in cf.index else None
+                    capex_row = cf.loc["Capital Expenditure"] if "Capital Expenditure" in cf.index else None
+                    if ocf_row is not None:
+                        ocf_series = ocf_row.dropna()
+                        if capex_row is not None:
+                            # OCF の日付インデックスに合わせて CapEx を整合（欠損は 0 補完）
+                            capex_aligned = capex_row.reindex(ocf_series.index).fillna(0.0)
+                            fcf_list = [float(o + c) for o, c in zip(ocf_series.values, capex_aligned.values)]
+                        else:
+                            fcf_list = [float(o) for o in ocf_series.values]
+            except Exception:
+                pass
+
+            result["fcf_list"] = fcf_list
+            result["latest_fcf"] = fcf_list[0] if fcf_list else None
+
+            # --- Beta取得失敗時のフォールバック ---
+            if result["beta"] is None or result["beta"] <= 0:
+                result["beta"] = 1.0
+
+            # FCFデータが取得できた場合のみキャッシュ（一時障害時の長期ブロックを防ぐ）
+            if fcf_list:
+                self.cache.set(cache_key, result)
+        except Exception as e:
+            logger.warning(f"DCFデータ取得失敗 {ticker}: {e}")
+
+        return result
+
     # ---- 決算カレンダー（フェイクアウト回避）----
 
     def get_earnings_date(self, ticker: str) -> Optional[datetime]:

@@ -108,8 +108,8 @@
 
 | # | 項目 | 状態 | 参照 |
 |---|------|------|------|
-| 7-1 | Comps分析レポート（同業他社5社との5+5指標比較表）| ⬜ | `financial-services/comps-analysis` |
-| 7-2 | 簡易DCFモデル自動計算（WACC・TV・フェアバリュー試算）| ⬜ | `financial-services/dcf-model` |
+| 7-1 | Comps分析レポート（同業他社5社との5+5指標比較表）| ✅ | `src/screener/comps_analyzer.py` + `pipelines/comps_pipeline.py` |
+| 7-2 | 簡易DCFモデル自動計算（WACC・TV・フェアバリュー試算）| ✅ | `src/screener/dcf_calculator.py` + `pipelines/dcf_pipeline.py` |
 | 7-3 | 決算レビュー自動化（Beat/Miss・ガイダンス変更の解析）| ⬜ | `financial-services/earnings-reviewer` |
 | 7-4 | マルチエージェント分解（Researcher → Screener → Analyst）| ⬜ | `financial-services/managed-agents` |
 | 7-5 | ポートフォリオ管理・リバランス提案 | ⬜ | `financial-services/wealth-management` |
