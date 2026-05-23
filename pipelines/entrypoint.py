@@ -5,6 +5,7 @@ Cloud Run Jobs エントリポイント。
   PIPELINE=daily  -> run_daily() を実行
   PIPELINE=notify -> run_notify() を実行
   PIPELINE=comps  -> run_comps() を実行
+  PIPELINE=dcf    -> run_dcf() を実行
 """
 import os
 import sys
@@ -29,9 +30,13 @@ elif PIPELINE == "comps":
     from pipelines.comps_pipeline import run_comps as _run
     def main():
         _run()
+elif PIPELINE == "dcf":
+    from pipelines.dcf_pipeline import run_dcf as _run
+    def main():
+        _run()
 else:
     print(f"ERROR: 環境変数 PIPELINE が未設定または不明な値です: '{PIPELINE}'")
-    print("  PIPELINE=weekly, PIPELINE=daily, PIPELINE=notify, または PIPELINE=comps を設定してください。")
+    print("  PIPELINE=weekly, PIPELINE=daily, PIPELINE=notify, PIPELINE=comps, または PIPELINE=dcf を設定してください。")
     sys.exit(1)
 
 if __name__ == "__main__":
