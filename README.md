@@ -66,12 +66,14 @@ bash scripts/setup_cron.sh
 
 ## 出力ファイル
 
-| ファイル | 内容 | 更新タイミング |
-|---------|------|-------------|
-| `output/watch_list.md` | ①監視対象銘柄リスト・AI投資テーゼ | 週次（日曜 8:00） |
-| `output/buy_candidates.md` | ②購入候補銘柄リスト（BUYシグナル銘柄） | BUY/SELL発生時 |
-| `output/daily_trade_signals.md` | 当日の全シグナル一覧・判定理由 | 日次（平日 19:30） |
-| `output/signals.csv` | 機械可読シグナルデータ | 日次（平日 19:30） |
+| ファイル | 内容 | 更新タイミング | 生成パイプライン |
+|---------|------|-------------|----------------|
+| `output/watch_list.md` | ①監視対象銘柄リスト・AI投資テーゼ | 週次（日曜 8:00） | `pipelines/weekly_pipeline.py` |
+| `output/weekly_moat_stocks.md` | `watch_list.md` への後方互換シンボリックリンク | 週次（日曜 8:00） | `pipelines/weekly_pipeline.py` |
+| `output/buy_candidates.md` | ②購入候補銘柄リスト（BUYシグナル銘柄） | BUY追加: `daily_pipeline.py` / 軸B削除: `weekly_pipeline.py` | `pipelines/daily_pipeline.py` + `pipelines/weekly_pipeline.py` |
+| `output/daily_trade_signals.md` | 当日の全シグナル一覧・判定理由 | 日次（平日 19:30） | `pipelines/daily_pipeline.py` |
+| `output/signals.csv` | 機械可読シグナルデータ | 日次（平日 19:30） | `pipelines/daily_pipeline.py` |
+| `output/earnings_review_YYYYMMDD.md` | 決算Beat/Miss・ガイダンス変化レポート | 手動実行 | `pipelines/earnings_pipeline.py` |
 
 ## 詳細仕様
 

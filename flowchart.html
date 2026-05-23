@@ -170,12 +170,23 @@
       border-radius: 8px;
       font-size: 0.8rem;
       color: var(--text-muted);
+      line-height: 1.8;
     }
 
     .step-output span {
       font-family: 'Courier New', monospace;
       color: var(--accent-cyan);
       font-size: 0.78rem;
+    }
+
+    .step-output .pipeline-label {
+      color: var(--accent-yellow);
+    }
+
+    .step-output .symlink-note {
+      color: var(--text-muted);
+      font-size: 0.74rem;
+      margin-left: 4px;
     }
 
     footer {
@@ -298,7 +309,11 @@ flowchart TD
       <li>Step2-G: 7指標スコアリング（ROE・CAGR・FCF・PEG比率・負債・利益率・配当）で上位20社</li>
       <li>Gemini AI: Top5銘柄の定性分析（Q1〜Q5）・投資テーゼ・ベアケース</li>
     </ul>
-    <div class="step-output">出力: <span>output/watch_list.md</span></div>
+    <div class="step-output">
+      出力: <span>output/watch_list.md</span><br>
+      　　　<span>output/weekly_moat_stocks.md</span><span class="symlink-note">（watch_list.md への後方互換シンボリックリンク）</span><br>
+      パイプライン: <span class="pipeline-label">pipelines/weekly_pipeline.py</span>
+    </div>
   </div>
 
   <div class="step-card">
@@ -316,7 +331,12 @@ flowchart TD
       <li>決算前後3日 / データ不足 → HOLD抑制（追加しない）</li>
       <li>※チャート状況・市場環境によっては長期間選定が行われない可能性あり</li>
     </ul>
-    <div class="step-output">出力: <span>output/buy_candidates.md</span>（BUY時のみ追加）</div>
+    <div class="step-output">
+      出力: <span>output/buy_candidates.md</span><span class="symlink-note">（BUY時のみ追加）</span><br>
+      　　　<span>output/daily_trade_signals.md</span><span class="symlink-note">（当日の全銘柄シグナル一覧）</span><br>
+      　　　<span>output/signals.csv</span><span class="symlink-note">（機械可読シグナルデータ）</span><br>
+      パイプライン: <span class="pipeline-label">pipelines/daily_pipeline.py</span>
+    </div>
   </div>
 
   <div class="step-card">
@@ -331,7 +351,29 @@ flowchart TD
       <li>両軸同時該当 → 即時除外 + 優先度高のLINE通知</li>
       <li>決算前後3日はテクニカルSELLを抑制（ファンダメンタルズ劣化による除外は実施）</li>
     </ul>
-    <div class="step-output">処理: <span>buy_candidates.md</span> から削除 / LINE通知</div>
+    <div class="step-output">
+      処理: <span>output/buy_candidates.md</span> から削除 / LINE通知<br>
+      パイプライン（軸A・テクニカル）: <span class="pipeline-label">pipelines/daily_pipeline.py</span><br>
+      パイプライン（軸B・ファンダメンタルズ）: <span class="pipeline-label">pipelines/weekly_pipeline.py</span>
+    </div>
+  </div>
+
+  <div class="step-card">
+    <div class="step-card-header">
+      <span class="step-badge badge-weekly">別途</span>
+      <span class="step-title">決算レビュー</span>
+    </div>
+    <p class="step-subtitle">手動実行 / 監視リスト銘柄の決算Beat/Miss・ガイダンス変化を解析</p>
+    <ul class="step-items">
+      <li>watch_list.md から対象銘柄を取得</li>
+      <li>各銘柄のEPS・売上実績 vs 予想を比較し Beat / Miss / In-Line を判定</li>
+      <li>ガイダンス変化（上方修正・下方修正・据え置き）を解析</li>
+      <li>LINE通知で結果を送信</li>
+    </ul>
+    <div class="step-output">
+      出力: <span>output/earnings_review_YYYYMMDD.md</span><br>
+      パイプライン: <span class="pipeline-label">pipelines/earnings_pipeline.py</span>
+    </div>
   </div>
 
 </div>
