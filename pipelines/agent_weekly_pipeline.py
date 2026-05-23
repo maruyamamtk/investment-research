@@ -93,6 +93,10 @@ def run_agent_weekly(dry_run: bool = False, force_refresh: bool = False):
         f.write(report)
     logger.info(f"レポート出力: {output_path}")
 
+    # 後方互換: weekly_moat_stocks.md → watch_list.md シンボリックリンク
+    legacy_path = cfg["output"].get("weekly_report_legacy", "output/weekly_moat_stocks.md")
+    _ensure_legacy_symlink(output_path, legacy_path)
+
     # --- LINE通知 ---
     new_watchlist = final_df["ticker"].head(20).tolist()
     prev_watchlist = cache.get("watchlist", ttl_hours=9999) or []
@@ -217,6 +221,8 @@ def _build_report(final_df, stock_analyses: list, dry_run: bool) -> str:
 
         lines += ["---", ""]
 
+    lines += _build_info_sources_section(final_df)
+
     lines += [
         "---",
         "",
@@ -227,6 +233,43 @@ def _build_report(final_df, stock_analyses: list, dry_run: bool) -> str:
     ]
 
     return "\n".join(lines)
+
+
+def _ensure_legacy_symlink(target: str, link_path: str) -> None:
+    """watch_list.md への後方互換シンボリックリンクを作成する。"""
+    try:
+        if os.path.islink(link_path):
+            os.unlink(link_path)
+        elif os.path.exists(link_path):
+            os.rename(link_path, link_path + ".bak")
+        rel_target = os.path.basename(target)
+        os.symlink(rel_target, link_path)
+        logger.info(f"後方互換シンボリックリンク作成: {link_path} → {rel_target}")
+    except Exception as e:
+        logger.warning(f"シンボリックリンク作成失敗（スキップ）: {e}")
+
+
+def _build_info_sources_section(df) -> list:
+    """各銘柄の一次情報ソース（EDINET・TDnet・IR）をMarkdownテーブルとして返す。"""
+    lines = [
+        "## 参照すべき一次情報ソース",
+        "",
+        "| 銘柄 | EDINET（有報） | TDnet（適時開示） | IR ページ |",
+        "|------|--------------|----------------|---------|",
+    ]
+    for _, row in df.iterrows():
+        ticker = row.get("ticker", "")
+        name = row.get("name", ticker)
+        label = f"{name}（{ticker}）"
+        edinet_url = "https://disclosure.edinet-fsa.go.jp/"
+        tdnet_url = "https://www.release.tdnet.info/"
+        website = row.get("website", "") or ""
+        edinet_cell = f"[有報を見る]({edinet_url})"
+        tdnet_cell = f"[開示を見る]({tdnet_url})"
+        ir_cell = f"[IR]({website})" if website else "-"
+        lines.append(f"| {label} | {edinet_cell} | {tdnet_cell} | {ir_cell} |")
+    lines.append("")
+    return lines
 
 
 def _check_axis_b(buy_mgr, final_df, new_watchlist, notifier) -> None:

@@ -46,7 +46,7 @@ class ResearcherAgent(BaseAgent):
         force_refresh = ctx.force_refresh
 
         if force_refresh:
-            for key in ("stage1_results",):
+            for key in ("stage1_results", "watchlist"):
                 self._cache.invalidate(key)
 
         # --- 銘柄リスト取得 ---
@@ -70,6 +70,8 @@ class ResearcherAgent(BaseAgent):
 
         if stage1_cached:
             stage1_filtered = pd.DataFrame(stage1_cached)
+            if dry_run:
+                stage1_filtered = stage1_filtered.head(30)
             logger.info(f"段階1: キャッシュから取得 ({len(stage1_filtered)}件)")
         else:
             basic_info_list = self._yf.get_basic_info_batch(
@@ -105,6 +107,6 @@ class ResearcherAgent(BaseAgent):
 
         logger.info("[ResearcherAgent] 完了")
         return AgentResult.ok(
-            tickers=tickers,
+            tickers_count=len(tickers),
             stage1_count=len(stage1_filtered),
         )
