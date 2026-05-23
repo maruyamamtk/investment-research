@@ -19,6 +19,7 @@ from src.notification import line_notifier
 from src.screener.earnings_reviewer import generate_earnings_report, get_earnings_data, determine_beat_miss
 from src.utils.cache import Cache
 from src.utils.credentials import override_credentials
+from src.utils.gcs_report import upload_report_to_gcs
 from src.utils.logger import get_logger
 
 logger = get_logger("earnings_pipeline")
@@ -138,6 +139,8 @@ def run_earnings_review(
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(content)
     logger.info(f"決算レビューレポートを出力: {out_path}")
+    if not dry_run:
+        upload_report_to_gcs(out_path, logger)
 
     # LINE 通知
     if not dry_run and summaries:

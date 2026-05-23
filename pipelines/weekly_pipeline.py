@@ -35,6 +35,7 @@ from src.ai_analyst.claude_analyzer import ClaudeAnalyzer
 from src.notification.line_notifier import from_config as line_from_config
 from src.utils.cache import Cache
 from src.utils.credentials import override_credentials
+from src.utils.gcs_report import upload_report_to_gcs
 from src.utils.logger import get_logger
 
 logger = get_logger("weekly_pipeline")
@@ -186,6 +187,9 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(report)
     logger.info(f"週次レポートを出力しました: {output_path}")
+    if not dry_run:
+        date_str = datetime.now().strftime("%Y%m%d")
+        upload_report_to_gcs(output_path, logger, dest_name=f"watch_list_{date_str}.md")
 
     # 後方互換: weekly_moat_stocks.md → watch_list.md のシンボリックリンク
     legacy_path = cfg["output"].get("weekly_report_legacy", "output/weekly_moat_stocks.md")
@@ -209,6 +213,8 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
     if not dry_run:
         logger.info("【Step6】③売却判断 軸B: 購入候補リストのファンダメンタルズ再確認")
         _check_axis_b(buy_mgr, final_df, new_watchlist, notifier)
+        date_str = datetime.now().strftime("%Y%m%d")
+        upload_report_to_gcs(buy_mgr.md_path, logger, dest_name=f"buy_candidates_weekly_{date_str}.md")
 
     logger.info("週次パイプライン完了")
     return final_df
