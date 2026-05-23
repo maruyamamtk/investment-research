@@ -60,6 +60,9 @@ class ClaudeAnalyzer:
                     system_instruction=system,
                     max_output_tokens=max_tokens,
                     temperature=0.3,
+                    # Gemini 2.5系はデフォルトでThinkingが有効になり、thinking tokensが
+                    # max_output_tokensを大量消費して出力が途中で切れる問題があるため無効化する
+                    thinking_config=types.ThinkingConfig(thinking_budget=0),
                 ),
             )
             return response.text.strip()
