@@ -139,7 +139,8 @@ def run_earnings_review(
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(content)
     logger.info(f"決算レビューレポートを出力: {out_path}")
-    upload_report_to_gcs(out_path, logger)
+    if not dry_run:
+        upload_report_to_gcs(out_path, logger)
 
     # LINE 通知
     if not dry_run and summaries:

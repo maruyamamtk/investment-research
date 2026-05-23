@@ -110,7 +110,8 @@ def run_comps(top_n: int = 5, dry_run: bool = False):
         f.write(content)
 
     logger.info(f"Compsレポートを出力: {out_path}")
-    upload_report_to_gcs(out_path, logger)
+    if not dry_run:
+        upload_report_to_gcs(out_path, logger)
     logger.info("Compsパイプライン完了")
     return out_path
 

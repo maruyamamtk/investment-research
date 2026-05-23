@@ -41,6 +41,22 @@ def test_upload_success(tmp_report):
     mock_blob.upload_from_filename.assert_called_once_with(tmp_report)
 
 
+def test_upload_with_dest_name(tmp_report):
+    """dest_name を指定すると GCS 上のファイル名が上書きされる。"""
+    mock_blob = MagicMock()
+    mock_bucket = MagicMock()
+    mock_bucket.blob.return_value = mock_blob
+    mock_client = MagicMock()
+    mock_client.bucket.return_value = mock_bucket
+
+    with patch.dict(os.environ, {"GCS_CACHE_BUCKET": "test-bucket"}):
+        with patch("google.cloud.storage.Client", return_value=mock_client):
+            result = upload_report_to_gcs(tmp_report, dest_name="buy_candidates_weekly_20260523.md")
+
+    assert result is True
+    mock_bucket.blob.assert_called_once_with("reports/buy_candidates_weekly_20260523.md")
+
+
 def test_upload_failure_returns_false(tmp_report):
     """アップロード失敗時に False を返す。"""
     mock_blob = MagicMock()

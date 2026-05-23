@@ -9,12 +9,13 @@ import os
 _logger = logging.getLogger(__name__)
 
 
-def upload_report_to_gcs(local_path: str, logger=None) -> bool:
+def upload_report_to_gcs(local_path: str, logger=None, dest_name: str = None) -> bool:
     """ローカルのレポートファイルを GCS の reports/ 配下にアップロードする。
 
     Args:
         local_path: アップロード対象のローカルファイルパス
         logger: ログ出力先（省略時はモジュールロガーを使用）
+        dest_name: GCS 上のファイル名（省略時は local_path のベース名を使用）
 
     Returns:
         アップロード成功時 True、スキップ・失敗時 False
@@ -24,7 +25,7 @@ def upload_report_to_gcs(local_path: str, logger=None) -> bool:
         return False
 
     log = logger or _logger
-    filename = os.path.basename(local_path)
+    filename = dest_name if dest_name else os.path.basename(local_path)
     blob_name = f"reports/{filename}"
 
     try:

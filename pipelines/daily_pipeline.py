@@ -174,7 +174,8 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
                 removed_tickers.append(r)
 
         buy_mgr.write_markdown()
-        upload_report_to_gcs(buy_mgr.md_path, logger)
+        date_str = datetime.now().strftime("%Y%m%d")
+        upload_report_to_gcs(buy_mgr.md_path, logger, dest_name=f"buy_candidates_daily_{date_str}.md")
 
         # --- 通知キューに保存（翌朝 notify-job が送信）---
         # GCS_CACHE_BUCKET が設定されている Cloud Run 環境では GCS に保存される
@@ -189,12 +190,15 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(_build_daily_report(results, dry_run, market_regime))
     logger.info(f"日次シグナル(Markdown)を出力: {md_path}")
-    upload_report_to_gcs(md_path, logger)
 
     # --- CSV 出力 ---
     _write_csv(results, csv_path)
     logger.info(f"日次シグナル(CSV)を出力: {csv_path}")
-    upload_report_to_gcs(csv_path, logger)
+
+    if not dry_run:
+        date_str = datetime.now().strftime("%Y%m%d")
+        upload_report_to_gcs(md_path, logger, dest_name=f"daily_trade_signals_{date_str}.md")
+        upload_report_to_gcs(csv_path, logger, dest_name=f"signals_{date_str}.csv")
 
     logger.info("日次パイプライン完了")
     return results

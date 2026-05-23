@@ -105,7 +105,8 @@ def run_dcf(
         f.write(content)
 
     logger.info(f"DCFレポートを出力: {out_path}")
-    upload_report_to_gcs(out_path, logger)
+    if not dry_run:
+        upload_report_to_gcs(out_path, logger)
     logger.info("DCFパイプライン完了")
     return out_path
 
