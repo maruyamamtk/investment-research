@@ -71,25 +71,34 @@ class ClaudeAnalyzer:
         """JSON出力モードでGeminiを呼び出し、パース済みdictを返す。失敗時はNone。"""
         if not self.client:
             return None
-        try:
-            response = self.client.models.generate_content(
-                model=self.model,
-                contents=user,
-                config=types.GenerateContentConfig(
-                    system_instruction=system,
-                    max_output_tokens=max_tokens,
-                    temperature=0.2,
-                    response_mime_type="application/json",
-                ),
-            )
-            text = response.text.strip()
-            # Gemini がマークダウンコードブロックで囲んで返す場合を除去
-            text = re.sub(r'^```(?:json)?\s*', '', text)
-            text = re.sub(r'\s*```$', '', text.strip())
-            return json.loads(text)
-        except Exception as e:
-            logger.error(f"Gemini JSON API呼び出し失敗: {e}")
-            return None
+        for attempt in range(2):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model,
+                    contents=user,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system,
+                        max_output_tokens=max_tokens,
+                        temperature=0.2,
+                        response_mime_type="application/json",
+                    ),
+                )
+                text = response.text.strip()
+                # Gemini がマークダウンコードブロックで囲んで返す場合を除去
+                text = re.sub(r'^```(?:json)?\s*', '', text)
+                text = re.sub(r'\s*```$', '', text.strip())
+                return json.loads(text)
+            except json.JSONDecodeError as e:
+                if attempt == 0:
+                    # 1回目失敗: トークン上限を倍にしてリトライ
+                    logger.warning(f"Gemini JSON パース失敗（リトライ中）: {e}")
+                    max_tokens = max_tokens * 2
+                    continue
+                logger.error(f"Gemini JSON API呼び出し失敗: {e}")
+                return None
+            except Exception as e:
+                logger.error(f"Gemini JSON API呼び出し失敗: {e}")
+                return None
 
     # ---- 週次: 投資メモ生成 ----
 
@@ -223,7 +232,7 @@ Q5: 組織力と企業文化
 overall_score は Q1〜Q5 の評価を総合した 0〜10 の数値（小数点1桁）。
 overall_comment は総合評価の要約（50〜100字）。
 """
-        result = self._call_json(system, user, max_tokens=2500)
+        result = self._call_json(system, user, max_tokens=4096)
         if not result:
             return _qualitative_skipped()
 
