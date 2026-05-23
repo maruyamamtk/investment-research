@@ -230,6 +230,13 @@ class TestScoreNetDebtEbitda:
     def test_none_returns_missing(self):
         assert score_net_debt_ebitda(None) == MISSING_SCORE
 
+    def test_nan_returns_missing(self):
+        assert score_net_debt_ebitda(float("nan")) == MISSING_SCORE
+
+    def test_large_negative_ebitda_returns_ten(self):
+        # EBITDAが負の場合に net_debt/EBITDA が極端な負値になっても 10.0 を返す
+        assert score_net_debt_ebitda(-999.0) == 10.0
+
 
 # ============================================================
 # _calc_eps_annual_growth

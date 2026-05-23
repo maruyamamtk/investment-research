@@ -264,6 +264,11 @@ def score_fcf_years(val: Optional[float]) -> float:
 
 def score_net_debt_ebitda(val: Optional[float]) -> float:
     """純負債/EBITDA: ≤0x→10点、≥5x→0点（小さいほど高得点）"""
+    if val is None or not math.isfinite(val):
+        return MISSING_SCORE
+    # EBITDAが負の場合、比率が大きな負値になり inverse スコアが10を超えるため上限クランプ前にガード
+    if val < 0.0:
+        return 10.0
     return _linear_score(val, lo=0.0, hi=5.0, inverse=True)
 
 
@@ -511,7 +516,7 @@ def calculate_total_score(df: pd.DataFrame, top_n: int = 20) -> pd.DataFrame:
 
     s1_missing = result.get("s1_missing_count", pd.Series(0, index=result.index))
     s2_missing = result.get("s2_missing_count", pd.Series(0, index=result.index))
-    result["total_missing_count"] = (s1_missing + s2_missing).astype(int)
+    result["total_missing_count"] = (s1_missing + s2_missing).fillna(0).astype(int)
     result["data_quality_note"] = result["total_missing_count"].apply(
         lambda n: "* データ欠損あり" if n >= MISSING_THRESHOLD else ""
     )

@@ -132,6 +132,9 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
 
     if stage2_cached:
         final_df = pd.DataFrame(stage2_cached)
+        if "total_score_100" not in final_df.columns and "total_score" in final_df.columns:
+            # 旧フォーマットのキャッシュには total_score_100 が存在しない場合がある
+            final_df = calculate_total_score(final_df, top_n=cfg["screener"]["step2"].get("top_n_candidates", 20))
         logger.info(f"段階2: キャッシュから取得 ({len(final_df)}件)")
     else:
         logger.info(f"詳細財務取得中: {len(stage1_tickers)}銘柄...")

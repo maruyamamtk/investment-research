@@ -25,10 +25,10 @@
 
 | # | 項目 | 状態 | 備考 |
 |---|------|------|------|
-| 2-1 | **【段階1】速報スコア**: yfinance basicから5次元スコア計算（営業利益率・自己資本比率・PEG比率・時価総額・配当性向）| ⬜ | 全1,600社 → 上位200〜400社に絞り込み。旧 `step1_filter.py` + `step2_analysis.py` の一部を統合再実装 |
-| 2-2 | **【段階2】精緻スコア**: J-Quants財務諸表 + yfinance詳細から8次元スコア計算（年次EPS成長・四半期EPS成長・年次売上成長・四半期売上成長・ROE・CF品質・FCF継続年数・純負債EBITDA）| ⬜ | 段階1上位候補のみに適用 |
-| 2-3 | 全13次元の重み付き **総合スコア（0〜100点）** 計算・スコア降順で上位20社選定 | ⬜ | REQUIREMENTS.md §3.1 スコアリング表の重みに従う |
-| 2-4 | 欠損値補完（データ未取得次元は中間スコア **5点** で補完） | ⬜ | |
+| 2-1 | **【段階1】速報スコア**: yfinance basicから5次元スコア計算（営業利益率・自己資本比率・PEG比率・時価総額・配当性向）| ✅ | 全1,600社 → 上位200〜400社に絞り込み。`src/screener/unified_scorer.py` に `calculate_stage1_scores()` + `filter_stage1_candidates()` 実装済み |
+| 2-2 | **【段階2】精緻スコア**: J-Quants財務諸表 + yfinance詳細から8次元スコア計算（年次EPS成長・四半期EPS成長・年次売上成長・四半期売上成長・ROE・CF品質・FCF継続年数・純負債EBITDA）| ✅ | 段階1上位候補のみに適用。`src/screener/unified_scorer.py` に実装済み |
+| 2-3 | 全13次元の重み付き **総合スコア（0〜100点）** 計算・スコア降順で上位20社選定 | ✅ | `calculate_total_score()` + `select_final_watchlist()` 実装済み |
+| 2-4 | 欠損値補完（データ未取得次元は中間スコア **5点** で補完） | ✅ | `MISSING_SCORE = 5.0` 定数と `_linear_score()` 内の None/isfinite ガードで全次元対応済み |
 | 2-5 | バリュエーション **参考表示**（EV/Revenue・EV/EBITDA・PER・PBR）をレポートに追記 | ⬜ | 選定の除外条件ではなく参考情報として記載 |
 | 2-6 | Gemini AI 投資テーゼ生成（Top5銘柄）| ✅ | APIキー設定済み・動作確認済み |
 | 2-7 | Gemini AI ベアケース・リスク分析生成（Top5銘柄）| ✅ | |
@@ -110,17 +110,17 @@
 |---|------|------|------|
 | 7-1 | Comps分析レポート（同業他社5社との5+5指標比較表）| ✅ | `src/screener/comps_analyzer.py` + `pipelines/comps_pipeline.py` |
 | 7-2 | 簡易DCFモデル自動計算（WACC・TV・フェアバリュー試算）| ✅ | `src/screener/dcf_calculator.py` + `pipelines/dcf_pipeline.py` |
-| 7-3 | 決算レビュー自動化（Beat/Miss・ガイダンス変更の解析）| ⬜ | `financial-services/earnings-reviewer` |
-| 7-4 | マルチエージェント分解（Researcher → Screener → Analyst）| ⬜ | `financial-services/managed-agents` |
-| 7-5 | ポートフォリオ管理・リバランス提案 | ⬜ | `financial-services/wealth-management` |
+| 7-3 | 決算レビュー自動化（Beat/Miss・ガイダンス変更の解析）| ✅ | `src/screener/earnings_reviewer.py` + `pipelines/earnings_pipeline.py`（Issue #15） |
+| 7-4 | マルチエージェント分解（Researcher → Screener → Analyst）| ✅ | `src/agents/` + `pipelines/agent_pipeline.py`（Issue #16） |
+| 7-5 | ポートフォリオ管理・リバランス提案 | ✅ | `src/portfolio/` + `pipelines/portfolio_pipeline.py`（Issue #17） |
 
 ---
 
 ## 進捗サマリー
 
 ```
-✅ 完了       : 27項目（データ基盤7・日次シグナル12・通知3・自動実行2・定性分析3）
-⬜ 未着手     : 13項目（統合スコアリング実装5・バリュエーション表示1・LINE翌朝通知1・将来拡張5・情報ソースリンク1）
+✅ 完了       : 37項目（データ基盤7・日次シグナル12・通知3・自動実行2・定性分析3・スコアリング4・将来拡張6）
+⬜ 未着手     :  4項目（バリュエーション表示1・LINE翌朝通知1・情報ソースリンク1・Secret Manager1）
 ⚠️ 要対応     :  2項目（Secret Manager移行・キャッシュ永続化）
 ```
 
@@ -128,12 +128,8 @@
 
 ### 直近の優先アクション
 
-1. **`統合スコアリング実装`（2-1〜2-4）** ⚡ 最重要 — 旧バイナリフィルタを廃止し、13次元スコアリングに一本化する（`src/screener/unified_scorer.py` 新規作成）
-2. **`バリュエーション参考表示`（2-5）** — EV/Revenue・EV/EBITDA・PER・PBRのレンジをレポートに追記
-3. **`Secret Manager 移行`（5-8）** ⚠️ セキュリティ — `settings.yaml` の平文APIキーを GCP Secret Manager へ移行
-4. **`キャッシュ永続化`（5-9）** — Cloud Storage バケットへの読み書きを `cache.py` に追加
-5. **`定性分析プロンプト設計`（2-9）** — `claude_analyzer.py` に `analyze_qualitative()` を追加、Q1〜Q5の5フレームワーク評価を Gemini に生成させる
-6. **`定性分析スコア生成`（2-10）** — Strong/Moderate/Weak/Unknown ラベル・根拠コメント・総合定性スコア（0〜10）
-7. **`週次レポートへの定性分析追記`（2-11）** — Top5 各社の定性分析テーブルを `watch_list.md` に統合
-8. **`情報ソースリンク追記`（2-12）** — 銘柄ごとに EDINET / TDnet / IR ページのURL を自動生成してレポートに付記
-9. **`LINE翌朝通知`（4-4）** — 通知専用の朝9:00 cronジョブ追加（小規模）
+1. **`バリュエーション参考表示`（2-5）** — EV/Revenue・EV/EBITDA・PER・PBRのレンジをレポートに追記
+2. **`Secret Manager 移行`（5-8）** ⚠️ セキュリティ — `settings.yaml` の平文APIキーを GCP Secret Manager へ移行
+3. **`キャッシュ永続化`（5-9）** — Cloud Storage バケットへの読み書きを `cache.py` に追加
+4. **`情報ソースリンク追記`（2-12）** — 銘柄ごとに EDINET / TDnet / IR ページのURL を自動生成してレポートに付記
+5. **`LINE翌朝通知`（4-4）** — 通知専用の朝9:00 cronジョブ追加（小規模）
