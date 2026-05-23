@@ -201,6 +201,7 @@ def generate_earnings_report(
     target_ticker: str,
     yf_client,
     prev_estimates: Optional[dict] = None,
+    earnings_data: Optional[dict] = None,
 ) -> str:
     """target_ticker の決算レビューレポート（Markdown）を生成して返す。
 
@@ -208,9 +209,10 @@ def generate_earnings_report(
         target_ticker: 銘柄コード
         yf_client: YFinanceClient インスタンス
         prev_estimates: 前回記録した通期EPS予想 {ticker: float}（ガイダンス変化検出用）
+        earnings_data: 事前取得済みデータ（省略時は get_earnings_data() を呼び出す）
     """
     logger.info(f"決算レビュー開始: {target_ticker}")
-    data = get_earnings_data(target_ticker, yf_client)
+    data = earnings_data if earnings_data is not None else get_earnings_data(target_ticker, yf_client)
 
     name = data.get("name", target_ticker)
     currency = data.get("currency", "JPY")
@@ -354,7 +356,9 @@ def generate_earnings_report(
 
 def _safe_float(val) -> Optional[float]:
     try:
-        if val is None or (isinstance(val, float) and pd.isna(val)):
+        if val is None:
+            return None
+        if pd.isna(val):
             return None
         return float(val)
     except (TypeError, ValueError):

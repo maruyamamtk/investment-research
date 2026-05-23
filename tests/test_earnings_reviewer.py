@@ -6,6 +6,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import numpy as np
 import pytest
 from src.screener.earnings_reviewer import (
     determine_beat_miss,
@@ -15,6 +16,7 @@ from src.screener.earnings_reviewer import (
     _fmt_val,
     _fmt_jpy,
     _fmt_pct,
+    _safe_float,
     BEAT_THRESHOLD,
     MISS_THRESHOLD,
 )
@@ -161,6 +163,34 @@ class TestFmtPct:
 
 
 # ================================================================
+# _safe_float
+# ================================================================
+
+class TestSafeFloat:
+    def test_normal_float_returned(self):
+        assert _safe_float(3.14) == 3.14
+
+    def test_none_returns_none(self):
+        assert _safe_float(None) is None
+
+    def test_numpy_nan_returns_none(self):
+        assert _safe_float(np.nan) is None
+
+    def test_numpy_float64_nan_returns_none(self):
+        assert _safe_float(np.float64("nan")) is None
+
+    def test_numpy_float64_valid_returns_float(self):
+        result = _safe_float(np.float64(42.5))
+        assert result == 42.5
+
+    def test_python_float_nan_returns_none(self):
+        assert _safe_float(float("nan")) is None
+
+    def test_int_converted_to_float(self):
+        assert _safe_float(10) == 10.0
+
+
+# ================================================================
 # generate_earnings_report（統合テスト）
 # ================================================================
 
@@ -224,16 +254,13 @@ class TestGenerateEarningsReport:
     def _run_report(self, data_override=None, prev_estimates=None):
         data = _make_fake_data(data_override)
         ticker = data["ticker"]
-        with mock.patch(
-            "src.screener.earnings_reviewer.get_earnings_data",
-            return_value=data,
-        ):
-            # yf_client は get_earnings_data をパッチするため None で OK
-            report = generate_earnings_report(
-                target_ticker=ticker,
-                yf_client=None,
-                prev_estimates=prev_estimates,
-            )
+        # earnings_data を直接渡すことで API 呼び出しを回避（二重取得修正を反映）
+        report = generate_earnings_report(
+            target_ticker=ticker,
+            yf_client=None,
+            prev_estimates=prev_estimates,
+            earnings_data=data,
+        )
         return report
 
     def test_report_contains_ticker(self):
@@ -276,14 +303,22 @@ class TestGenerateEarningsReport:
 
     def test_downward_guidance_detected(self):
         data = _make_fake_data({"current_eps_estimate": 180.0})
+        report = generate_earnings_report(
+            "1234.T", None, prev_estimates={"1234.T": 220.0}, earnings_data=data
+        )
+        assert "下方修正" in report
+
+    def test_earnings_data_parameter_skips_api_call(self):
+        """earnings_data を渡すと get_earnings_data が呼ばれないことを確認。"""
+        data = _make_fake_data()
         with mock.patch(
             "src.screener.earnings_reviewer.get_earnings_data",
-            return_value=data,
+            side_effect=AssertionError("get_earnings_data should not be called"),
         ):
             report = generate_earnings_report(
-                "1234.T", None, prev_estimates={"1234.T": 220.0}
+                "1234.T", None, earnings_data=data
             )
-        assert "下方修正" in report
+        assert "1234.T" in report
 
     def test_no_eps_history_shows_warning(self):
         report = self._run_report(data_override={"eps_history": []})

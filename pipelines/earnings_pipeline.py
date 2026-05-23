@@ -77,16 +77,19 @@ def run_earnings_review(
 
     for ticker in target_tickers:
         try:
+            # データを1回だけ取得し、レポート生成・サマリー収集の両方で再利用する
+            data = get_earnings_data(ticker, yf_client)
+
             md = generate_earnings_report(
                 target_ticker=ticker,
                 yf_client=yf_client,
                 prev_estimates=prev_estimates,
+                earnings_data=data,
             )
             sections.append(md)
             logger.info(f"  {ticker}: 決算レビュー生成完了")
 
             # サマリー情報を収集（LINE通知用）
-            data = get_earnings_data(ticker, yf_client)
             eps_hist = data.get("eps_history", [])
             if eps_hist:
                 latest = eps_hist[0]
