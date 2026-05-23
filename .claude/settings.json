@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "python3 /Users/michika_maruyama/Desktop/investment_research/scripts/hooks/post_edit_check.py"
+          },
+          {
+            "type": "command",
+            "command": "python3 /Users/michika_maruyama/Desktop/investment_research/scripts/hooks/run_related_tests.py"
           }
         ]
       }
