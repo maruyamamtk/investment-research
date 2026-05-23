@@ -84,7 +84,7 @@ def run_portfolio(
     logger.info("【Step5】レポート出力")
     report = advisor.build_report(suggestions)
     output_path = cfg["output"].get("portfolio_report", "output/portfolio_report.md")
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    _makedirs_safe(output_path)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(report)
     logger.info(f"ポートフォリオレポートを出力: {output_path}")
@@ -114,6 +114,13 @@ def run_portfolio(
     }
 
 
+def _makedirs_safe(path: str) -> None:
+    """ファイルパスのディレクトリを安全に作成する（フラットなファイル名でも安全）。"""
+    dir_name = os.path.dirname(path)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
+
+
 def _load_watchlist(watchlist_csv, cache, cfg):
     """ウォッチリストを読み込む（CSV優先 → キャッシュフォールバック）。"""
     import pandas as pd
@@ -122,8 +129,9 @@ def _load_watchlist(watchlist_csv, cache, cfg):
         logger.info(f"  ウォッチリストCSV読み込み: {watchlist_csv}")
         return pd.read_csv(watchlist_csv)
 
-    # キャッシュから stage2_results を取得
-    cached = cache.get("stage2_results", ttl_hours=168)
+    # キャッシュから stage2_results を取得（設定ファイルの TTL を優先）
+    ttl = cfg.get("data", {}).get("cache_ttl_hours", {}).get("fundamentals", 168)
+    cached = cache.get("stage2_results", ttl_hours=ttl)
     if cached:
         df = pd.DataFrame(cached)
         logger.info(f"  ウォッチリストをキャッシュから取得: {len(df)}銘柄")
@@ -136,7 +144,7 @@ def _load_watchlist(watchlist_csv, cache, cfg):
 def _write_empty_report(cfg):
     """保有銘柄が空の場合のレポートを出力する。"""
     output_path = cfg["output"].get("portfolio_report", "output/portfolio_report.md")
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    _makedirs_safe(output_path)
     content = (
         "# ポートフォリオ・リバランスレポート\n\n"
         "保有銘柄が登録されていません。\n\n"

@@ -93,11 +93,11 @@ class RebalanceAdvisor:
     def _watchlist_rank(self, ticker: str) -> Optional[int]:
         if self.watchlist_df is None or self.watchlist_df.empty:
             return None
-        matches = self.watchlist_df[self.watchlist_df["ticker"] == ticker]
-        if matches.empty:
+        df = self.watchlist_df.reset_index(drop=True)
+        positions = df.index[df["ticker"] == ticker].tolist()
+        if not positions:
             return None
-        idx = self.watchlist_df.index.get_loc(matches.index[0])
-        return idx + 1
+        return int(positions[0]) + 1
 
     def _watchlist_score(self, ticker: str) -> Optional[float]:
         if self.watchlist_df is None or self.watchlist_df.empty:
@@ -118,7 +118,8 @@ class RebalanceAdvisor:
         top_n_new: ウォッチリスト上位からの新規購入候補を最大何件提案するか
         """
         suggestions: list[RebalanceSuggestion] = []
-        total_value = self.pm.total_current_value or self.pm.total_acquisition_value
+        cv = self.pm.total_current_value
+        total_value = cv if cv is not None else self.pm.total_acquisition_value
         weights = self.pm.get_weights()
         holding_tickers = {h.ticker for h in self.pm.holdings}
 
@@ -186,9 +187,24 @@ class RebalanceAdvisor:
             # ウェイト下限未満かつスコアが高い → 増株
             if current_w < self.min_weight - self.threshold and rank is not None and rank <= 10:
                 target_w = self.min_weight
-                target_value = total_value * target_w
+                target_value = (total_value or 0) * target_w
                 current_val = h.current_value or (h.shares * current_price)
                 shortage = target_value - current_val
+                if shortage <= 0:
+                    # 評価額が既に目標を超えているため HOLD にフォールスルー
+                    suggestions.append(RebalanceSuggestion(
+                        ticker=h.ticker,
+                        name=h.name or h.ticker,
+                        action="HOLD",
+                        reason=f"条件維持（ウォッチリスト {rank}位、スコア {score:.1f}）" if rank is not None and score is not None else "継続保有",
+                        current_weight=current_w,
+                        target_weight=current_w,
+                        current_price=current_price,
+                        current_shares=h.shares,
+                        watchlist_rank=rank,
+                        score=score,
+                    ))
+                    continue
                 add_shares = max(1, int(shortage / current_price))
                 trade_val = add_shares * current_price
                 fee = self._calc_fee(trade_val)
@@ -216,7 +232,7 @@ class RebalanceAdvisor:
                 ticker=h.ticker,
                 name=h.name or h.ticker,
                 action="HOLD",
-                reason=f"条件維持（ウォッチリスト {rank}位、スコア {score:.1f}）" if rank and score else "継続保有",
+                reason=f"条件維持（ウォッチリスト {rank}位、スコア {score:.1f}）" if rank is not None and score is not None else "継続保有",
                 current_weight=current_w,
                 target_weight=current_w,
                 current_price=current_price,
@@ -231,10 +247,11 @@ class RebalanceAdvisor:
                 ~self.watchlist_df["ticker"].isin(holding_tickers)
             ].head(top_n_new)
 
-            for rank_0, (_, row) in enumerate(new_candidates.iterrows(), 1):
+            for _, row in new_candidates.iterrows():
                 ticker = row.get("ticker", "")
                 name = row.get("name", ticker)
                 score = self._watchlist_score(ticker)
+                actual_rank = self._watchlist_rank(ticker)
                 current_price = row.get("close") or row.get("current_price")
 
                 try:
@@ -249,11 +266,12 @@ class RebalanceAdvisor:
                 trade_val = buy_shares * current_price if current_price else 0
                 fee = self._calc_fee(trade_val) if trade_val > 0 else 0.0
 
+                rank_str = f"{actual_rank}位" if actual_rank is not None else "圏外"
                 suggestions.append(RebalanceSuggestion(
                     ticker=ticker,
                     name=name,
                     action="BUY",
-                    reason=f"ウォッチリスト {rank_0}位（未保有）、スコア {score:.1f}" if score else f"ウォッチリスト {rank_0}位（未保有）",
+                    reason=f"ウォッチリスト {rank_str}（未保有）、スコア {score:.1f}" if score is not None else f"ウォッチリスト {rank_str}（未保有）",
                     current_weight=0.0,
                     target_weight=target_w,
                     current_price=current_price,
@@ -263,7 +281,7 @@ class RebalanceAdvisor:
                     estimated_tax=0.0,
                     estimated_fee=fee,
                     estimated_net_cost=fee,
-                    watchlist_rank=rank_0,
+                    watchlist_rank=actual_rank,
                     score=score,
                 ))
 
@@ -326,20 +344,12 @@ class RebalanceAdvisor:
 
         weights = self.pm.get_weights()
         for h in self.pm.holdings:
-            cv = h.current_value
-            pnl_h = h.unrealized_pnl
-            pnl_pct_h = h.unrealized_pnl_pct
-            w = weights.get(h.ticker, 0)
-            lines.append(
-                f"| {h.name or h.ticker}（{h.ticker}） "
-                f"| {h.shares}株 "
-                f"| {h.acquisition_price:,.0f}円 "
-                f"| {h.current_price:,.0f}円 |" if h.current_price else
-                f"| {h.name or h.ticker}（{h.ticker}） "
-                f"| {h.shares}株 "
-                f"| {h.acquisition_price:,.0f}円 "
-                f"| N/A |"
-            )
+            label = f"{h.name or h.ticker}（{h.ticker}）"
+            base = f"| {label} | {h.shares}株 | {h.acquisition_price:,.0f}円 "
+            if h.current_price:
+                lines.append(base + f"| {h.current_price:,.0f}円 |")
+            else:
+                lines.append(base + "| N/A |")
 
         lines += [
             "",

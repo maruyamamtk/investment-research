@@ -90,38 +90,27 @@ class PortfolioManager:
         logger.info(f"ポートフォリオ読み込み完了: {len(self._holdings)}銘柄")
 
     def refresh_prices(self) -> None:
-        """yfinance から現在価格を取得して各 Holding に設定する。"""
+        """yf_client 経由で現在価格を取得して各 Holding に設定する。"""
         if not self._holdings:
             return
         if self.yf_client is None:
             logger.warning("YFinanceClientが未設定のため現在価格を取得できません")
             return
 
-        tickers = [h.ticker for h in self._holdings]
-        logger.info(f"現在価格取得中: {tickers}")
-
-        import yfinance as yf
-        data = yf.download(tickers, period="1d", auto_adjust=True, progress=False)
-
-        if data.empty:
-            logger.warning("yfinance からデータを取得できませんでした")
-            return
-
-        close = data["Close"] if "Close" in data.columns else data.get("close")
-        if close is None:
-            return
-
         for h in self._holdings:
             try:
-                if len(tickers) == 1:
-                    price = float(close.iloc[-1])
-                else:
-                    col = h.ticker
-                    if col in close.columns:
-                        price = float(close[col].dropna().iloc[-1])
-                    else:
-                        price = None
-                h.current_price = price
+                df = self.yf_client.get_price_history(h.ticker, days=5)
+                if df is None or df.empty:
+                    logger.warning(f"  {h.ticker} の価格履歴が取得できませんでした")
+                    continue
+                close_col = next(
+                    (c for c in df.columns if c.lower() == "close"), None
+                )
+                if close_col is None:
+                    logger.warning(f"  {h.ticker} のCloseカラムが見つかりません")
+                    continue
+                h.current_price = float(df[close_col].dropna().iloc[-1])
+                logger.info(f"  {h.ticker} 現在価格: {h.current_price:,.0f}円")
             except Exception as e:
                 logger.warning(f"  {h.ticker} の現在価格取得失敗: {e}")
 
