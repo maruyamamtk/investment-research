@@ -97,6 +97,7 @@ output:
   watchlist_cache: "cache/watchlist.json"
   step1_cache: "cache/step1_results.json"
   step2_cache: "cache/step2_results.json"
+  portfolio_report: "output/portfolio_report.md"
 
 # --- ログ設定 ---
 logging:

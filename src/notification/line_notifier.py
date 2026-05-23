@@ -194,6 +194,52 @@ class LineNotifier:
 
         return self._send([self._text("\n".join(lines))])
 
+    # ---- リバランス提案通知 ----
+
+    def notify_rebalance_suggestion(
+        self,
+        suggestions: list,
+        portfolio_summary: dict = None,
+        cost_summary: dict = None,
+    ) -> bool:
+        """ポートフォリオのリバランス提案をLINEで通知する"""
+        if not suggestions:
+            return False
+
+        summary = portfolio_summary or {}
+        cost = cost_summary or {}
+
+        total_val = summary.get("total_current_value")
+        total_pnl = summary.get("total_unrealized_pnl")
+
+        lines = [f"📊 ポートフォリオ リバランス提案（{_today()}）\n"]
+
+        if total_val is not None:
+            pnl_str = f"（含み損益: {total_pnl:+,.0f}円）" if total_pnl is not None else ""
+            lines.append(f"評価額: {total_val:,.0f}円 {pnl_str}\n")
+
+        sell = [s for s in suggestions if s.action in ("SELL", "REDUCE")]
+        buy = [s for s in suggestions if s.action in ("BUY", "INCREASE")]
+
+        if sell:
+            lines.append("🔴 売却・減株")
+            for s in sell[:3]:
+                lines.append(f"  {s.name}（{s.ticker}）: {s.reason[:40]}")
+
+        if buy:
+            lines.append("\n🟢 購入・増株")
+            for s in buy[:3]:
+                lines.append(f"  {s.name}（{s.ticker}）: {s.reason[:40]}")
+
+        total_cost = cost.get("total_cost", 0)
+        if total_cost > 0:
+            lines.append(f"\n💰 リバランスコスト概算: {total_cost:,.0f}円")
+            lines.append(f"  （税金: {cost.get('total_tax', 0):,.0f}円 + 手数料: {cost.get('total_fee', 0):,.0f}円）")
+
+        lines.append("\n詳細は portfolio_report.md を確認してください。")
+
+        return self._send([self._text("\n".join(lines))])
+
     # ---- エラー通知 ----
 
     def notify_error(self, pipeline: str, error_msg: str) -> bool:

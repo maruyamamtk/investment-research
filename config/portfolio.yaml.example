@@ -1,0 +1,52 @@
+# ==========================================
+# ポートフォリオ設定ファイル（サンプル）
+# ==========================================
+# 【使い方】このファイルをコピーして config/portfolio.yaml を作成し、
+# 実際の保有銘柄情報を記入してください（gitignore 対象）。
+#   cp config/portfolio.yaml.example config/portfolio.yaml
+#
+# 【フォーマット】
+#   holdings: 保有銘柄リスト
+#     - ticker:           銘柄コード（例: 7203.T）
+#       shares:           保有株数（整数）
+#       acquisition_price: 取得単価（円）
+#       name:             銘柄名（任意・表示用）
+#       note:             メモ（任意）
+#
+#   settings: リバランス設定
+#     total_budget:           リバランスに使える予算上限（円、0=無制限）
+#     max_single_weight:      1銘柄あたりの最大ウェイト比率（例: 0.30 = 30%）
+#     min_single_weight:      1銘柄あたりの最小ウェイト比率（例: 0.03 = 3%）
+#     tax_rate:               譲渡益税率（日本: 0.20315）
+#     brokerage_rate:         売買手数料率（例: 0.001 = 0.1%）
+#     brokerage_min_fee:      最低手数料（円）
+#     rebalance_threshold:    リバランス提案を出す閾値（目標ウェイトとの乖離率）
+# ==========================================
+
+holdings:
+  - ticker: "7203.T"
+    shares: 100
+    acquisition_price: 2500.0
+    name: "トヨタ自動車"
+    note: "長期保有"
+
+  - ticker: "6758.T"
+    shares: 50
+    acquisition_price: 10000.0
+    name: "ソニーグループ"
+    note: ""
+
+  - ticker: "9984.T"
+    shares: 20
+    acquisition_price: 6000.0
+    name: "ソフトバンクグループ"
+    note: "監視中"
+
+settings:
+  total_budget: 0                # 0 = 無制限（リバランス費用のみ考慮）
+  max_single_weight: 0.30        # 1銘柄最大30%
+  min_single_weight: 0.03        # 1銘柄最小3%
+  tax_rate: 0.20315              # 譲渡益税率（所得税15%+住民税5%+復興特別所得税0.315%）
+  brokerage_rate: 0.001          # 売買手数料率（0.1%）
+  brokerage_min_fee: 100         # 最低手数料100円
+  rebalance_threshold: 0.10      # 目標ウェイトとの乖離が10%以上でリバランス提案
