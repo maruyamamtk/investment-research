@@ -243,13 +243,13 @@ class YFinanceClient:
                     ocf_row = cf.loc["Operating Cash Flow"] if "Operating Cash Flow" in cf.index else None
                     capex_row = cf.loc["Capital Expenditure"] if "Capital Expenditure" in cf.index else None
                     if ocf_row is not None:
-                        ocf_vals = ocf_row.dropna().values
-                        capex_vals = (
-                            capex_row.dropna().values
-                            if capex_row is not None
-                            else [0.0] * len(ocf_vals)
-                        )
-                        fcf_list = [float(o + c) for o, c in zip(ocf_vals, capex_vals)]
+                        ocf_series = ocf_row.dropna()
+                        if capex_row is not None:
+                            # OCF の日付インデックスに合わせて CapEx を整合（欠損は 0 補完）
+                            capex_aligned = capex_row.reindex(ocf_series.index).fillna(0.0)
+                            fcf_list = [float(o + c) for o, c in zip(ocf_series.values, capex_aligned.values)]
+                        else:
+                            fcf_list = [float(o) for o in ocf_series.values]
             except Exception:
                 pass
 
@@ -260,7 +260,9 @@ class YFinanceClient:
             if result["beta"] is None or result["beta"] <= 0:
                 result["beta"] = 1.0
 
-            self.cache.set(cache_key, result)
+            # FCFデータが取得できた場合のみキャッシュ（一時障害時の長期ブロックを防ぐ）
+            if fcf_list:
+                self.cache.set(cache_key, result)
         except Exception as e:
             logger.warning(f"DCFデータ取得失敗 {ticker}: {e}")
 

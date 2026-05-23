@@ -38,6 +38,7 @@ def run_dcf(
     top_n: int = 5,
     dry_run: bool = False,
     risk_free_rate: float = DEFAULT_RISK_FREE_RATE,
+    market_premium: float = DEFAULT_MARKET_PREMIUM,
     terminal_growth: float = DEFAULT_TERMINAL_GROWTH,
 ):
     logger.info("=" * 60)
@@ -69,6 +70,7 @@ def run_dcf(
                 target_ticker=ticker,
                 yf_client=yf_client,
                 risk_free_rate=risk_free_rate,
+                market_premium=market_premium,
                 terminal_growth=terminal_growth,
             )
             sections.append(md)
@@ -109,6 +111,8 @@ if __name__ == "__main__":
     parser.add_argument("--dry-run", action="store_true", help="テスト用（APIスリープ短縮）")
     parser.add_argument("--risk-free-rate", type=float, default=DEFAULT_RISK_FREE_RATE,
                         help="リスクフリーレート（デフォルト: 0.015）")
+    parser.add_argument("--market-premium", type=float, default=DEFAULT_MARKET_PREMIUM,
+                        help="市場リスクプレミアム（デフォルト: 0.05）")
     parser.add_argument("--terminal-growth", type=float, default=DEFAULT_TERMINAL_GROWTH,
                         help="永続成長率（デフォルト: 0.01）")
     args = parser.parse_args()
@@ -116,5 +120,6 @@ if __name__ == "__main__":
         top_n=args.top_n,
         dry_run=args.dry_run,
         risk_free_rate=args.risk_free_rate,
+        market_premium=args.market_premium,
         terminal_growth=args.terminal_growth,
     )

@@ -104,10 +104,15 @@ def calculate_terminal_value(last_projected_fcf: float, wacc: float, terminal_gr
     """Gordon Growth Model によるターミナルバリュー。
 
     TV = FCF_n × (1 + g) / (WACC - g)
-    WACC > g でないと無限大になるため、差が 0.5% 未満の場合はクランプ。
+    WACC > g でないと計算不能なため、差が 0.5% 未満の場合は 0.5% にクランプ。
     """
     spread = wacc - terminal_growth
-    spread = max(spread, 0.005)
+    if spread < 0.005:
+        logger.warning(
+            f"WACC ({wacc:.2%}) が terminal_growth ({terminal_growth:.2%}) に近すぎます。"
+            f"スプレッドを 0.50% にクランプします。TV が過大評価される可能性があります。"
+        )
+        spread = 0.005
     return last_projected_fcf * (1 + terminal_growth) / spread
 
 
@@ -162,16 +167,21 @@ def sensitivity_matrix(
     wacc_deltas = [-0.01, 0.0, 0.01]
     growth_deltas = [-0.02, 0.0, 0.02]
 
-    wacc_vals = [round(base_wacc + d, 4) for d in wacc_deltas]
-    growth_vals = [round(base_growth + d, 4) for d in growth_deltas]
+    # WACC は terminal_growth + 0.005 以上を保証し、計算上の TV 歪みを防ぐ
+    wacc_floor = terminal_growth + 0.005
+    wacc_vals = [round(max(base_wacc + d, wacc_floor), 4) for d in wacc_deltas]
+
+    # growth_labels はクランプ後の実際の計算値を使用してラベルと計算を一致させる
+    growth_vals = [
+        round(max(FCF_GROWTH_CAP[0], min(FCF_GROWTH_CAP[1], base_growth + d)), 4)
+        for d in growth_deltas
+    ]
 
     matrix = []
     for g in growth_vals:
         row = []
         for w in wacc_vals:
-            w = max(w, 0.01)
-            g_clamped = max(FCF_GROWTH_CAP[0], min(FCF_GROWTH_CAP[1], g))
-            proj = project_fcf(base_fcf, g_clamped, years)
+            proj = project_fcf(base_fcf, g, years)
             tv = calculate_terminal_value(proj[-1], w, terminal_growth)
             ev = calculate_enterprise_value(proj, tv, w)
             fv = calculate_fair_value_per_share(ev, net_debt, shares_outstanding)
@@ -263,7 +273,7 @@ def generate_dcf_report(
         f"| 直近FCF | {latest_fcf_oku:,.1f} 億円 |",
         f"| 時価総額 | {market_cap_oku:,.0f} 億円 |",
         f"| ネット有利子負債 | {net_debt_oku:,.1f} 億円 |",
-        f"| 発行済み株式数 | {shares_outstanding:,} 株 |",
+        f"| 発行済み株式数 | {int(shares_outstanding):,} 株 |",
         "",
     ]
 
@@ -278,7 +288,7 @@ def generate_dcf_report(
         pv = fcf / (1 + wacc) ** t_idx
         lines.append(f"| {t_idx}年後 | {fcf / 1e8:,.1f} | {pv / 1e8:,.1f} |")
 
-    tv_pv = tv / (1 + wacc) ** DEFAULT_PROJECTION_YEARS
+    tv_pv = tv / (1 + wacc) ** len(projected)
     lines += [
         f"| ターミナルバリュー | {tv / 1e8:,.1f} | {tv_pv / 1e8:,.1f} |",
         f"| **エンタープライズバリュー合計** | | **{ev / 1e8:,.1f}** |",
