@@ -52,9 +52,8 @@ def run_agent_weekly(dry_run: bool = False, force_refresh: bool = False):
     cfg = load_config()
     cache = Cache(cache_dir="cache")
 
-    jq_email = cfg["api"]["jquants"]["email"]
-    jq_pass = cfg["api"]["jquants"]["password"]
-    jq_client = JQuantsClient(email=jq_email, password=jq_pass, cache=cache) if (jq_email and jq_pass) else None
+    jq_api_key = cfg["api"]["jquants"].get("api_key")
+    jq_client = JQuantsClient(api_key=jq_api_key, cache=cache) if jq_api_key else None
 
     yf_client = YFinanceClient(cache=cache, batch_sleep=cfg["data"]["batch_sleep_sec"])
     analyzer = ClaudeAnalyzer(

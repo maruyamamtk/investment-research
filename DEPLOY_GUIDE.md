@@ -25,7 +25,7 @@ gcloud --version    # Google Cloud CLI
 
 | 項目 | 取得先 | 用途 |
 |------|--------|------|
-| J-Quants メール/パスワード | https://jpx-jquants.com/ | 日本株データ取得 |
+| J-Quants APIキー | https://jpx-jquants.com/ | 日本株データ取得（V2・APIキー方式） |
 | Gemini API キー | https://aistudio.google.com/ | AI分析 |
 | LINE Channel Access Token | LINE Developers Console | LINE通知 |
 | LINE User ID | LINE Developers Console | LINE通知 |
@@ -50,8 +50,7 @@ bash scripts/setup.sh
 ```yaml
 api:
   jquants:
-    email: "your-email@example.com"
-    password: "your-password"
+    api_key: "your-jquants-api-key"   # V2 APIキー（必須）
   gemini:
     api_key: "AIza..."
   line:
@@ -62,8 +61,7 @@ api:
 または環境変数で指定（`config/settings.yaml` より優先される）：
 
 ```bash
-export JQUANTS_EMAIL="your-email@example.com"
-export JQUANTS_PASSWORD="your-password"
+export JQUANTS_API_KEY="your-jquants-api-key"
 export GEMINI_API_KEY="AIza..."
 export LINE_CHANNEL_ACCESS_TOKEN="your-token"
 export LINE_USER_ID="Uxxxxxxxx"
@@ -147,8 +145,7 @@ docker build -t investment-research:local .
 # 週次パイプラインをコンテナ内で実行
 docker run --rm \
   -e PIPELINE=weekly \
-  -e JQUANTS_EMAIL="${JQUANTS_EMAIL}" \
-  -e JQUANTS_PASSWORD="${JQUANTS_PASSWORD}" \
+  -e JQUANTS_API_KEY="${JQUANTS_API_KEY}" \
   -e GEMINI_API_KEY="${GEMINI_API_KEY}" \
   -e LINE_CHANNEL_ACCESS_TOKEN="${LINE_CHANNEL_ACCESS_TOKEN}" \
   -e LINE_USER_ID="${LINE_USER_ID}" \
@@ -158,8 +155,7 @@ docker run --rm \
 # 日次パイプラインをコンテナ内で実行
 docker run --rm \
   -e PIPELINE=daily \
-  -e JQUANTS_EMAIL="${JQUANTS_EMAIL}" \
-  -e JQUANTS_PASSWORD="${JQUANTS_PASSWORD}" \
+  -e JQUANTS_API_KEY="${JQUANTS_API_KEY}" \
   -e GEMINI_API_KEY="${GEMINI_API_KEY}" \
   investment-research:local \
   python3 pipelines/entrypoint.py
@@ -182,11 +178,8 @@ gcloud config set project keiba-prediction-1768734113
 PROJECT_ID="keiba-prediction-1768734113"
 
 # 各シークレットを作成（値を直接入力）
-echo -n "your-jquants-email" | \
-  gcloud secrets create jquants-email --data-file=- --project "${PROJECT_ID}"
-
-echo -n "your-jquants-password" | \
-  gcloud secrets create jquants-password --data-file=- --project "${PROJECT_ID}"
+echo -n "your-jquants-api-key" | \
+  gcloud secrets create jquants-api-key --data-file=- --project "${PROJECT_ID}"
 
 echo -n "your-gemini-api-key" | \
   gcloud secrets create gemini-api-key --data-file=- --project "${PROJECT_ID}"
@@ -202,7 +195,7 @@ echo -n "your-line-user-id" | \
 
 ```bash
 echo -n "new-value" | \
-  gcloud secrets versions add jquants-email --data-file=- --project "${PROJECT_ID}"
+  gcloud secrets versions add jquants-api-key --data-file=- --project "${PROJECT_ID}"
 ```
 
 ### Step 3: GCS キャッシュバケットの作成（初回のみ）
@@ -355,7 +348,7 @@ gcloud secrets list --project keiba-prediction-1768734113
 
 # 最新バージョンの値を確認
 gcloud secrets versions access latest \
-  --secret jquants-email \
+  --secret jquants-api-key \
   --project keiba-prediction-1768734113
 ```
 

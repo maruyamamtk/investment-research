@@ -1,7 +1,9 @@
 """
-J-Quants API クライアント
+J-Quants API クライアント（V2）
 用途: プライム市場の全銘柄リスト・財務諸表（EPS・売上高・ROE）取得
-認証フロー: email/password → refresh_token → id_token
+認証: APIキー方式（x-api-key ヘッダー）。
+      ※ V1 のトークン方式（/token/auth_user → refresh_token → id_token）は
+        J-Quants 側で廃止され 410 Gone を返すため、V2 へ移行済み。
 """
 import time
 from typing import Optional
@@ -11,56 +13,49 @@ import requests
 from src.utils.cache import Cache
 from src.utils.logger import get_logger
 
-BASE_URL = "https://api.jquants.com/v1"
+BASE_URL = "https://api.jquants.com/v2"
 logger = get_logger("jquants")
 
-# 年次・四半期を判別するための TypeOfDocument プレフィックス
+# 年次・四半期を判別するための DocType プレフィックス
 _ANNUAL_TYPES = {"FY"}
 _QUARTERLY_TYPES = {"1Q", "2Q", "3Q"}
 
+# V2 で短縮されたフィールド名 → 本クライアントが内部で使う正規名 への対応表。
+# 下流ロジック（get_eps_series 等）を V1 時代のまま維持するための正規化に使う。
+_STATEMENT_FIELD_MAP = {
+    "EPS": "EarningsPerShare",
+    "Sales": "NetSales",
+    "NP": "Profit",
+    "Eq": "Equity",
+    "EqAR": "EquityToAssetRatio",
+    "DocType": "TypeOfDocument",
+    "CurPerEn": "CurrentPeriodEndDate",
+}
+
 
 class JQuantsClient:
-    def __init__(self, email: str, password: str, cache: Optional[Cache] = None):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        cache: Optional[Cache] = None,
+        # 後方互換のため残置（V2 では未使用）
+        email: Optional[str] = None,
+        password: Optional[str] = None,
+    ):
+        self.api_key = api_key
         self.email = email
         self.password = password
         self.cache = cache or Cache()
-        self._id_token: Optional[str] = None
 
-    # ---- 認証 ----
-
-    def _get_refresh_token(self) -> str:
-        resp = requests.post(
-            f"{BASE_URL}/token/auth_user",
-            json={"mailaddress": self.email, "password": self.password},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        return resp.json()["refreshToken"]
-
-    def _get_id_token(self, refresh_token: str) -> str:
-        resp = requests.post(
-            f"{BASE_URL}/token/auth_refresh",
-            params={"refreshtoken": refresh_token},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        return resp.json()["idToken"]
-
-    def _authenticate(self) -> None:
-        cached = self.cache.get("jquants_id_token", ttl_hours=23)
-        if cached:
-            self._id_token = cached
-            return
-        logger.info("J-Quants: 認証中...")
-        refresh_token = self._get_refresh_token()
-        self._id_token = self._get_id_token(refresh_token)
-        self.cache.set("jquants_id_token", self._id_token)
-        logger.info("J-Quants: 認証完了")
+    # ---- 認証（APIキー方式） ----
 
     def _headers(self) -> dict:
-        if not self._id_token:
-            self._authenticate()
-        return {"Authorization": f"Bearer {self._id_token}"}
+        if not self.api_key:
+            raise RuntimeError(
+                "J-Quants APIキーが未設定です。V2 はAPIキー認証必須です"
+                "（settings.yaml の api.jquants.api_key または環境変数 JQUANTS_API_KEY を設定してください）"
+            )
+        return {"x-api-key": self.api_key}
 
     # ---- 銘柄マスター ----
 
@@ -73,14 +68,15 @@ class JQuantsClient:
 
         logger.info("J-Quants: プライム市場銘柄マスター取得中...")
         resp = requests.get(
-            f"{BASE_URL}/listed/info",
+            f"{BASE_URL}/equities/master",
             headers=self._headers(),
             timeout=60,
         )
         resp.raise_for_status()
 
-        all_stocks = resp.json().get("info", [])
-        prime = [s for s in all_stocks if s.get("MarketCode") == "0111"]
+        all_stocks = resp.json().get("data", [])
+        # V2: 市場区分は "Mkt"、プライム = "0111"
+        prime = [s for s in all_stocks if s.get("Mkt") == "0111"]
 
         self.cache.set("prime_stock_list", prime)
         logger.info(f"J-Quants: プライム市場銘柄マスター取得完了 ({len(prime)}件)")
@@ -115,13 +111,15 @@ class JQuantsClient:
 
         try:
             resp = requests.get(
-                f"{BASE_URL}/fins/statements",
+                f"{BASE_URL}/fins/summary",
                 headers=self._headers(),
                 params={"code": jq_code},
                 timeout=30,
             )
             resp.raise_for_status()
-            statements = resp.json().get("statements", [])
+            raw = resp.json().get("data", [])
+            # V2 の短縮フィールド名を V1 互換の正規名へ変換し、下流ロジックを不変に保つ
+            statements = [_normalize_statement(s) for s in raw]
             self.cache.set(cache_key, statements)
             return statements
         except Exception as e:
@@ -213,6 +211,16 @@ class JQuantsClient:
             result[code] = self.get_eps_series(code)
             time.sleep(sleep_sec)
         return result
+
+
+def _normalize_statement(s: dict) -> dict:
+    """V2 /fins/summary の短縮フィールド名を V1 互換の正規名へマッピングする。
+    元キーも残しつつ、正規名が未設定の場合のみ補完する（冪等）。"""
+    out = dict(s)
+    for v2_key, canonical in _STATEMENT_FIELD_MAP.items():
+        if canonical not in out and v2_key in s:
+            out[canonical] = s[v2_key]
+    return out
 
 
 def _to_float(val) -> Optional[float]:

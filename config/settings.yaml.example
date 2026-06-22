@@ -7,8 +7,9 @@
 #
 # 【本番環境 (Cloud Run)】認証情報は GCP Secret Manager + 環境変数で注入されます。
 # settings.yaml の値は空白のまま、以下の環境変数が優先されます。
-#   JQUANTS_EMAIL              → api.jquants.email
-#   JQUANTS_PASSWORD           → api.jquants.password
+#   JQUANTS_API_KEY            → api.jquants.api_key  ← V2はこれを使用
+#   JQUANTS_EMAIL              → api.jquants.email     （V1廃止のため未使用）
+#   JQUANTS_PASSWORD           → api.jquants.password  （V1廃止のため未使用）
 #   GEMINI_API_KEY             → api.gemini.api_key
 #   LINE_CHANNEL_ACCESS_TOKEN  → api.line.channel_access_token
 #   LINE_USER_ID               → api.line.user_id
@@ -20,8 +21,9 @@
 # --- API認証情報 ---
 api:
   jquants:
-    email: "your-email@example.com"       # または環境変数 JQUANTS_EMAIL
-    password: "your-jquants-password"      # または環境変数 JQUANTS_PASSWORD
+    api_key: "your-jquants-api-key"        # V2 APIキー（必須）。または環境変数 JQUANTS_API_KEY
+    email: "your-email@example.com"        # V1廃止のため未使用（後方互換のため残置）
+    password: "your-jquants-password"      # V1廃止のため未使用（後方互換のため残置）
   gemini:
     api_key: "your-gemini-api-key"         # または環境変数 GEMINI_API_KEY
     model_weekly: "gemini-2.5-flash"
