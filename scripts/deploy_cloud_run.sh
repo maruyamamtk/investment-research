@@ -38,13 +38,12 @@ GCS_CACHE_BUCKET="${GCS_CACHE_BUCKET:-${PROJECT_ID}-investment-cache}"
 
 # Secret Manager シークレット名（gcloud secrets create で事前に作成が必要）
 # 作成例:
-#   echo -n "value" | gcloud secrets create jquants-email      --data-file=- --project ${PROJECT_ID}
-#   echo -n "value" | gcloud secrets create jquants-password   --data-file=- --project ${PROJECT_ID}
+#   echo -n "value" | gcloud secrets create jquants-api-key   --data-file=- --project ${PROJECT_ID}
 #   echo -n "value" | gcloud secrets create gemini-api-key     --data-file=- --project ${PROJECT_ID}
 #   echo -n "value" | gcloud secrets create line-channel-access-token --data-file=- --project ${PROJECT_ID}
 #   echo -n "value" | gcloud secrets create line-user-id       --data-file=- --project ${PROJECT_ID}
 # --set-secrets は1フラグにカンマ区切りで指定（複数フラグにすると後続が前を上書きするため）
-SECRET_FLAGS="JQUANTS_EMAIL=jquants-email:latest,JQUANTS_PASSWORD=jquants-password:latest,GEMINI_API_KEY=gemini-api-key:latest,LINE_CHANNEL_ACCESS_TOKEN=line-channel-access-token:latest,LINE_USER_ID=line-user-id:latest"
+SECRET_FLAGS="JQUANTS_API_KEY=jquants-api-key:latest,GEMINI_API_KEY=gemini-api-key:latest,LINE_CHANNEL_ACCESS_TOKEN=line-channel-access-token:latest,LINE_USER_ID=line-user-id:latest"
 # ──────────────────────────────────────────────────────────
 
 echo "=== プロジェクト: ${PROJECT_ID} / リージョン: ${REGION} ==="

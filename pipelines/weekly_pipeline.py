@@ -60,8 +60,7 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
     cfg = load_config()
     cache = Cache(cache_dir="cache")
     yf_client = YFinanceClient(cache=cache, batch_sleep=cfg["data"]["batch_sleep_sec"])
-    jq_email = cfg["api"]["jquants"]["email"]
-    jq_pass = cfg["api"]["jquants"]["password"]
+    jq_api_key = cfg["api"]["jquants"].get("api_key")
     analyzer = ClaudeAnalyzer(
         api_key=cfg["api"]["gemini"]["api_key"],
         model=cfg["api"]["gemini"]["model_weekly"],
@@ -84,8 +83,8 @@ def run_weekly(dry_run: bool = False, force_refresh: bool = False):
 
     # --- Step0: 銘柄リスト取得 ---
     logger.info("【Step0】銘柄マスター取得")
-    if jq_email and jq_pass:
-        jq_client = JQuantsClient(email=jq_email, password=jq_pass, cache=cache)
+    if jq_api_key:
+        jq_client = JQuantsClient(api_key=jq_api_key, cache=cache)
         tickers = jq_client.get_prime_tickers()
         jq_codes = jq_client.get_prime_codes()
     else:
