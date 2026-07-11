@@ -89,6 +89,7 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
 
     tech_cfg = cfg["technical"]
     sig_cfg = tech_cfg["signal_thresholds"]
+    signal_weights = tech_cfg.get("signal_weights")  # 未設定なら signals.DEFAULT_WEIGHTS
     results = []
 
     for ticker in watchlist:
@@ -127,6 +128,7 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
             earnings_date=earnings_date,
             earnings_hold_days=sig_cfg["earnings_hold_days"],
             market_regime=market_regime,
+            weights=signal_weights,
         )
 
         # --- AI解説生成 ---

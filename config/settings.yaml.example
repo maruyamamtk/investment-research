@@ -83,6 +83,21 @@ technical:
     earnings_hold_days: 3
     stop_loss_pct: 0.10
 
+  # シグナルスコアの重み上書き（省略時は src/technical/signals.py の DEFAULT_WEIGHTS）
+  # signal_weights:
+  #   gc_new: 3          # ゴールデンクロス発生
+  #   gc_hold: 1         # ゴールデンクロス維持
+  #   dc_new: 3          # デッドクロス発生（SELL側）
+  #   dc_hold: 1         # デッドクロス維持（SELL側）
+  #   rsi_reversal: 0    # RSI反転（逆張り成分: 方向逆転が判明し無効化済み）
+  #   rsi_zone: 0        # RSIゾーン滞留（同上）
+  #   macd_cross: 2      # MACD転換
+  #   macd_zone: 1       # MACD圏内滞留
+  #   bb_break: 0        # ボリンジャーバンドブレイク（逆張り成分: 無効化済み）
+  #   volume_confirm: 1  # 出来高確度加点
+  #   pattern_scale: 1.0 # チャートパターン倍率
+  #   sell_threshold: 4  # SELL閾値（バックテストにより3→4に変更済み）
+
 # --- データ取得設定 ---
 data:
   history_days: 400

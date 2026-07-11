@@ -24,6 +24,31 @@ REGIME_BULL = "BULL"
 REGIME_BEAR = "BEAR"
 REGIME_NEUTRAL = "NEUTRAL"
 
+# シグナルスコアの重み（settings.yaml の technical.signal_weights で上書き可能）
+#
+# 2026-07 に11,296銘柄日のパネル分析（方向性検証・OLS回帰）と18ヶ月×38銘柄の
+# バックテスト（学習2025/検証2026分割）で再調整した。詳細は
+# output/algorithm_evaluation_20260711.md 第2弾・第3弾を参照。
+#   - RSI逆張り（売られすぎ買い/過熱売り）はこのユニバースでは方向が逆
+#     （売られすぎ反転買いの以後10日は市場平均比-0.99%、過熱反転は+0.60%）→ 0点
+#   - ボリンジャー下限ブレイクの「反発期待」買いも逆（同-1.74%、t=-4.0）→ 0点
+#   - SELL閾値4 = デッドクロス発生（3点）単独では売らず、もう1つの弱気要素で確定
+#   - 上記の組で全期間平均 +2.22% → +4.10%/トレード（テール5%分位も-11.1%→-9.7%に改善）
+DEFAULT_WEIGHTS = {
+    "gc_new": 3,          # ゴールデンクロス発生
+    "gc_hold": 1,         # ゴールデンクロス維持（パネル分析で最も頑健な買い材料）
+    "dc_new": 3,          # デッドクロス発生（SELL側）
+    "dc_hold": 1,         # デッドクロス維持（SELL側）
+    "rsi_reversal": 0,    # RSI反転（逆張り成分: 方向逆転のため無効化）
+    "rsi_zone": 0,        # RSIゾーン滞留（同上）
+    "macd_cross": 2,      # MACDヒストグラム転換
+    "macd_zone": 1,       # MACDヒストグラム圏内滞留
+    "bb_break": 0,        # ボリンジャーバンドブレイク（逆張り成分: 方向逆転のため無効化）
+    "volume_confirm": 1,  # 出来高増加の確度加点
+    "pattern_scale": 1.0, # チャートパターンスコアの倍率
+    "sell_threshold": 4,  # SELL判定の閾値
+}
+
 
 # ---- テクニカル指標計算 ----
 
@@ -347,6 +372,16 @@ def detect_chart_patterns(df: pd.DataFrame) -> dict:
 
 # ---- シグナル判定 ----
 
+def _apply_score(weight, reason: str, reasons: list):
+    """重みが有効（>0）な場合のみ判定理由に記録し、重みを返す。
+
+    理由欄は「スコアに寄与した条件」だけを列挙する契約とし、
+    無効化された条件（重み0）が判定理由に紛れ込まないようにする。
+    """
+    if weight > 0:
+        reasons.append(reason)
+    return weight
+
 def determine_signal(
     df: pd.DataFrame,
     rsi_oversold: float = 35,
@@ -355,6 +390,7 @@ def determine_signal(
     earnings_date: Optional[datetime] = None,
     earnings_hold_days: int = 3,
     market_regime: Optional[dict] = None,
+    weights: Optional[dict] = None,
 ) -> dict:
     """
     最新日のテクニカルデータからシグナルを判定する。
@@ -364,12 +400,18 @@ def determine_signal(
     - NEUTRAL: 閾値4点（やや厳しく）
     - BEAR相場: 閾値5点（大幅に厳しく — 逆張りを避ける）
 
+    weights で構成要素ごとのスコア重みを上書きできる（キーは DEFAULT_WEIGHTS 参照）。
+
+    reasons（判定理由）には**スコアに実際に寄与した条件のみ**を記録する。
+    重み0で無効化された条件は成立していても理由欄に載らない（理由欄とロジックの整合性を保証）。
+
     Returns:
         dict: {signal, strength, reasons, indicators, chart_patterns, market_regime}
     """
     if len(df) < 30:
         return _build_result(SIGNAL_WATCH, 0, ["データ不足（30営業日未満）"], df, {}, market_regime)
 
+    w = {**DEFAULT_WEIGHTS, **(weights or {})}
     buy_threshold = market_regime["buy_threshold"] if market_regime else 3
 
     latest = df.iloc[-1]
@@ -392,76 +434,60 @@ def determine_signal(
     gc_prev = prev["sma5"] > prev["sma20"]
 
     if gc_now and not gc_prev:
-        reasons.append("ゴールデンクロス発生（SMA5 > SMA20）")
-        buy_score += 3
+        buy_score += _apply_score(w["gc_new"], "ゴールデンクロス発生（SMA5 > SMA20）", reasons)
     elif gc_now:
-        reasons.append("ゴールデンクロス維持（SMA5 > SMA20）")
-        buy_score += 1
+        buy_score += _apply_score(w["gc_hold"], "ゴールデンクロス維持（SMA5 > SMA20）", reasons)
     elif not gc_now and gc_prev:
-        reasons.append("デッドクロス発生（SMA5 < SMA20）")
-        sell_score += 3
+        sell_score += _apply_score(w["dc_new"], "デッドクロス発生（SMA5 < SMA20）", reasons)
     else:
-        reasons.append("デッドクロス維持（SMA5 < SMA20）")
-        sell_score += 1
+        sell_score += _apply_score(w["dc_hold"], "デッドクロス維持（SMA5 < SMA20）", reasons)
 
-    # --- RSI ---
+    # --- RSI（デフォルト重み0: 方向逆転のため無効化。重みを設定した場合のみ寄与） ---
     rsi = latest["rsi14"]
     prev_rsi = prev["rsi14"]
     if rsi < rsi_oversold and rsi > prev_rsi:
-        reasons.append(f"RSI売られすぎ({rsi:.1f})から反転上昇")
-        buy_score += 2
+        buy_score += _apply_score(w["rsi_reversal"], f"RSI売られすぎ({rsi:.1f})から反転上昇", reasons)
     elif rsi > rsi_overbought and rsi < prev_rsi:
-        reasons.append(f"RSI過熱({rsi:.1f})から反転下落")
-        sell_score += 2
+        sell_score += _apply_score(w["rsi_reversal"], f"RSI過熱({rsi:.1f})から反転下落", reasons)
     elif rsi < rsi_oversold:
-        reasons.append(f"RSI売られすぎ圏({rsi:.1f})")
-        buy_score += 1
+        buy_score += _apply_score(w["rsi_zone"], f"RSI売られすぎ圏({rsi:.1f})", reasons)
     elif rsi > rsi_overbought:
-        reasons.append(f"RSI過熱圏({rsi:.1f})")
-        sell_score += 1
+        sell_score += _apply_score(w["rsi_zone"], f"RSI過熱圏({rsi:.1f})", reasons)
 
     # --- MACD ヒストグラム ---
     hist = latest["macd_hist"]
     prev_hist = prev["macd_hist"]
     if hist > 0 and prev_hist <= 0:
-        reasons.append("MACDヒストグラムがプラス転換（上昇モメンタム）")
-        buy_score += 2
+        buy_score += _apply_score(w["macd_cross"], "MACDヒストグラムがプラス転換（上昇モメンタム）", reasons)
     elif hist < 0 and prev_hist >= 0:
-        reasons.append("MACDヒストグラムがマイナス転換（下落モメンタム）")
-        sell_score += 2
+        sell_score += _apply_score(w["macd_cross"], "MACDヒストグラムがマイナス転換（下落モメンタム）", reasons)
     elif hist > 0:
-        reasons.append("MACDヒストグラムがプラス圏")
-        buy_score += 1
+        buy_score += _apply_score(w["macd_zone"], "MACDヒストグラムがプラス圏", reasons)
     else:
-        reasons.append("MACDヒストグラムがマイナス圏")
-        sell_score += 1
+        sell_score += _apply_score(w["macd_zone"], "MACDヒストグラムがマイナス圏", reasons)
 
-    # --- ボリンジャーバンド ---
+    # --- ボリンジャーバンド（デフォルト重み0: 方向逆転のため無効化） ---
     close = latest["Close"]
     if close > latest["bb_upper"]:
-        reasons.append("ボリンジャー上限ブレイク（過熱注意）")
-        sell_score += 1
+        sell_score += _apply_score(w["bb_break"], "ボリンジャー上限ブレイク（過熱注意）", reasons)
     elif close < latest["bb_lower"]:
-        reasons.append("ボリンジャー下限ブレイク（反発期待）")
-        buy_score += 1
+        buy_score += _apply_score(w["bb_break"], "ボリンジャー下限ブレイク（反発期待）", reasons)
 
     # --- 出来高 ---
     vol_ratio = latest["volume_ratio"]
-    if vol_ratio >= volume_threshold:
+    if vol_ratio >= volume_threshold and w["volume_confirm"] > 0:
         reasons.append(f"出来高比率 {vol_ratio:.1f}x（出来高増加で確度UP）")
         if buy_score > sell_score:
-            buy_score += 1
+            buy_score += w["volume_confirm"]
         else:
-            sell_score += 1
+            sell_score += w["volume_confirm"]
 
     # --- チャートパターン ---
     chart_patterns = detect_chart_patterns(df)
     for p in chart_patterns.get("bullish", []):
-        reasons.append(f"[パターン] {p['pattern']}: {p['reason']}")
-        buy_score += p["score"]
+        buy_score += _apply_score(p["score"] * w["pattern_scale"], f"[パターン] {p['pattern']}: {p['reason']}", reasons)
     for p in chart_patterns.get("bearish", []):
-        reasons.append(f"[パターン] {p['pattern']}: {p['reason']}")
-        sell_score += p["score"]
+        sell_score += _apply_score(p["score"] * w["pattern_scale"], f"[パターン] {p['pattern']}: {p['reason']}", reasons)
 
     # --- 市場レジームの情報を理由に追記 ---
     if market_regime:
@@ -476,10 +502,10 @@ def determine_signal(
     # --- シグナル判定（市場レジームによる動的閾値）---
     if buy_score > sell_score and buy_score >= buy_threshold:
         signal = SIGNAL_BUY
-        strength = min(buy_score, 10)
-    elif sell_score > buy_score and sell_score >= 3:
+        strength = min(int(round(buy_score)), 10)
+    elif sell_score > buy_score and sell_score >= w["sell_threshold"]:
         signal = SIGNAL_SELL
-        strength = min(sell_score, 10)
+        strength = min(int(round(sell_score)), 10)
     else:
         signal = SIGNAL_WATCH
         strength = 0
