@@ -58,6 +58,7 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
     buy_mgr = BuyCandidatesManager(
         cache_path=cfg["output"].get("buy_candidates_cache", "cache/buy_candidates.json"),
         md_path=cfg["output"].get("buy_candidates_md", "output/buy_candidates.md"),
+        cache=cache,
     )
 
     # --- ウォッチリスト取得 ---
@@ -77,7 +78,8 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
     market_regime = None
     if not dry_run:
         logger.info("市場レジーム判定（日経225）")
-        n225_df = yf_client.get_price_history("^N225", days=300)
+        # 200営業日のSMAには約290暦日+祝日分が必要（300日では198営業日しか取れず常に中立判定になる）
+        n225_df = yf_client.get_price_history("^N225", days=450)
         if n225_df is not None and not n225_df.empty:
             market_regime = detect_market_regime(n225_df)
             logger.info(
@@ -157,8 +159,9 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
         logger.info(f"  {ticker}: {signal_emoji(sig)} {sig} (強度:{signal_result['strength']}/10)")
         time.sleep(1)
 
-    # --- ②購入候補リスト更新（BUY追加 / SELL除外）---
+    # --- ②購入候補リスト更新（BUY追加 / SELL・損切り除外）---
     if not dry_run:
+        stop_loss_pct = sig_cfg.get("stop_loss_pct", 0.10)
         removed_tickers = []
         added_tickers = []
         for r in results:
@@ -171,6 +174,9 @@ def run_daily(ticker_override: str = None, dry_run: bool = False):
                     added_tickers.append(r)
             elif r["signal"] == "SELL" and buy_mgr.contains(ticker):
                 buy_mgr.remove(ticker, reason="テクニカルSELLシグナル（軸A）")
+                removed_tickers.append(r)
+            elif buy_mgr.should_stop_loss(ticker, r["close"], stop_loss_pct):
+                buy_mgr.remove(ticker, reason=f"損切り（初回推奨時から{stop_loss_pct*100:.0f}%以上下落）")
                 removed_tickers.append(r)
 
         buy_mgr.write_markdown()

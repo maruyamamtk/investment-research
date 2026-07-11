@@ -3,14 +3,20 @@
 
 ・BUYシグナル発生時に銘柄を追加（重複除外・最新情報で更新）
 ・SELLシグナル発生時に銘柄を除外
+・損切り: 初回推奨時の価格から一定率下落で除外（should_stop_loss）
 ・軸B ファンダメンタルズ劣化時に caution_flag を付与し、2回連続で除外
 ・output/buy_candidates.md を更新する
+
+状態は Cache 経由で保存する（GCS_CACHE_BUCKET 設定時は GCS、未設定時はローカル）。
+Cloud Run のエフェメラルディスクではローカルファイルが実行毎に消えるため、
+直接のファイルI/Oでは追加日・caution_count がリセットされてしまう。
 """
 import json
 import os
 from datetime import datetime
 from typing import Optional
 
+from src.utils.cache import Cache
 from src.utils.logger import get_logger
 
 logger = get_logger("buy_candidates")
@@ -18,15 +24,21 @@ logger = get_logger("buy_candidates")
 _DEFAULT_CACHE = "cache/buy_candidates.json"
 _DEFAULT_MD = "output/buy_candidates.md"
 
+# 購入候補は明示的に除外されるまで保持する（TTLで消えてはいけない）
+_STATE_TTL_HOURS = 24 * 3650
+
 
 class BuyCandidatesManager:
     def __init__(
         self,
         cache_path: str = _DEFAULT_CACHE,
         md_path: str = _DEFAULT_MD,
+        cache: Optional[Cache] = None,
     ):
         self.cache_path = cache_path
         self.md_path = md_path
+        self._cache = cache or Cache(cache_dir=os.path.dirname(cache_path) or "cache")
+        self._cache_key = os.path.splitext(os.path.basename(cache_path))[0]
         self._candidates: dict[str, dict] = self._load()
 
     # ------------------------------------------------------------------ #
@@ -40,6 +52,8 @@ class BuyCandidatesManager:
             "ticker": ticker,
             "name": signal_info.get("name", existing.get("name", ticker)),
             "added_date": existing.get("added_date", datetime.now().strftime("%Y-%m-%d")),
+            # 損切り判定の基準となる初回推奨時の株価（再BUYでは上書きしない）
+            "entry_close": existing.get("entry_close", signal_info.get("close")),
             "last_signal_date": signal_info.get("date", datetime.now().strftime("%Y-%m-%d")),
             "signal_strength": signal_info.get("strength", 0),
             "close": signal_info.get("close"),
@@ -84,6 +98,16 @@ class BuyCandidatesManager:
             self._candidates[ticker]["caution_count"] = 0
             self._persist()
 
+    def should_stop_loss(self, ticker: str, current_close: Optional[float], stop_loss_pct: float) -> bool:
+        """初回推奨時の価格から stop_loss_pct 以上下落していれば True を返す。"""
+        entry = self._candidates.get(ticker)
+        if not entry or not current_close or stop_loss_pct <= 0:
+            return False
+        entry_close = entry.get("entry_close") or entry.get("close")
+        if not entry_close:
+            return False
+        return current_close <= entry_close * (1 - stop_loss_pct)
+
     def get_all(self) -> list[dict]:
         return list(self._candidates.values())
 
@@ -105,22 +129,35 @@ class BuyCandidatesManager:
     # ------------------------------------------------------------------ #
 
     def _load(self) -> dict[str, dict]:
-        if os.path.exists(self.cache_path):
-            try:
-                with open(self.cache_path, encoding="utf-8") as f:
-                    data = json.load(f)
-                if isinstance(data, list):
-                    return {item["ticker"]: item for item in data}
-                if isinstance(data, dict):
-                    return data
-            except (json.JSONDecodeError, KeyError):
-                logger.warning(f"購入候補キャッシュの読み込み失敗: {self.cache_path}")
+        try:
+            data = self._cache.get(self._cache_key, ttl_hours=_STATE_TTL_HOURS)
+        except Exception:
+            # 旧形式（Cacheラッパーなしの生JSON）のローカルファイルはここに落ちる
+            data = None
+        if data is None:
+            data = self._load_legacy_file()
+        if isinstance(data, list):
+            return {item["ticker"]: item for item in data}
+        if isinstance(data, dict):
+            return data
         return {}
 
+    def _load_legacy_file(self):
+        """Cache導入前に直接書き出していた生JSONファイルからの移行読み込み。"""
+        if not os.path.exists(self.cache_path):
+            return None
+        try:
+            with open(self.cache_path, encoding="utf-8") as f:
+                entry = json.load(f)
+        except (json.JSONDecodeError, KeyError):
+            logger.warning(f"購入候補キャッシュの読み込み失敗: {self.cache_path}")
+            return None
+        if isinstance(entry, dict) and "data" in entry and "saved_at" in entry:
+            return entry["data"]
+        return entry
+
     def _persist(self) -> None:
-        os.makedirs(os.path.dirname(self.cache_path) if os.path.dirname(self.cache_path) else ".", exist_ok=True)
-        with open(self.cache_path, "w", encoding="utf-8") as f:
-            json.dump(list(self._candidates.values()), f, ensure_ascii=False, indent=2)
+        self._cache.set(self._cache_key, list(self._candidates.values()))
 
     def _build_markdown(self) -> str:
         now = datetime.now().strftime("%Y年%m月%d日 %H:%M")

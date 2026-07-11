@@ -1,27 +1,36 @@
-# TODO: J-Quants V2移行（410 Gone 修正）
+# TODO: 投資推奨アルゴリズムの妥当性評価と改善（2026-07-11）
 
-## 背景
-J-Quants V1トークン認証廃止（410 Gone）で週次パイプラインが停止していた問題の修正。
+## ゴール
+1. Cloud Run実行結果（GCS: reports/）から推奨銘柄一覧を抽出
+2. 初回推奨日以降の価格推移を調査（yfinance）
+3. アルゴリズムの妥当性を評価（リターン・ベンチマーク比較）
+4. ロジック詳細を調査し、評価に基づくアルゴリズム修正を実装
 
-## 実装タスク
-- [x] 根本原因の特定（V1認証廃止 → V2 APIキー方式へ移行）
-- [x] `JQuantsClient` をAPIキー方式（`x-api-key`）へ刷新
-- [x] エンドポイントをV2へ（`/v2/equities/master`, `/v2/fins/summary`）
-- [x] V2短縮フィールド名→V1正規名の正規化レイヤー追加
-- [x] `credentials.py` に `JQUANTS_API_KEY` マッピング追加
-- [x] `settings.yaml` / `settings.yaml.example` に `api_key` 欄追加
-- [x] パイプライン2本（weekly / agent_weekly）をAPIキー優先に変更
-- [x] `DEPLOY_GUIDE.md` / `deploy_cloud_run.sh` のシークレットをapi-keyへ更新
+## タスク
+- [x] GCS reports/ 全件をスクラッチパッドへダウンロード（36営業日・570シグナル行）
+- [x] buy_candidates_daily / signals.csv から BUY推奨銘柄と初回推奨日を抽出（21銘柄）
+- [x] yfinanceで各銘柄の初回推奨日以降の価格推移を取得（日経225・TOPIX ETF込み）
+- [x] リターン集計・勝率・ベンチマーク超過を算出し妥当性を評価
+- [x] BUYシグナルロジック（src/technical/signals.py・daily_pipeline.py）の詳細調査
+- [x] 評価結果に基づくアルゴリズム修正の設計・実装（3件）
+- [x] テスト・検証（新規11件含む全401テストPASS・dry-run・実データレジーム確認）
+- [x] 評価レポートと修正内容のドキュメント化（output/algorithm_evaluation_20260711.md）
 
-## 検証
-- [x] V2レスポンスをモックした単体検証（ヘッダー/マスター/財務正規化/ROE）全PASS
-- [x] 既存テスト 390件 全PASS（回帰なし）
+## レビュー
 
-## レビューセクション
-- 変更は認証・エンドポイント・パース層に限定。下流ロジック（スコアリング等）は正規化レイヤーで不変に維持。
-- `config/settings.yaml` はgitignore対象のためコミットされない（テンプレート側 `.example` を更新）。
+### 評価結果
+- 買い持ち: 平均+3.68%・勝率67%・対日経超過+3.87%（76%が超過）→ 銘柄選定は妥当
+- SELL手仕舞い: 決済済み7件 平均-3.78%・勝率29% → 出口ロジックが価値毀損
+- 詳細は `output/algorithm_evaluation_20260711.md`
 
-## 残課題（運用側 / ライブAPI確認）
-- [ ] J-QuantsダッシュボードでAPIキーを発行し `JQUANTS_API_KEY` を設定
-- [ ] 実データ1銘柄で `DocType` プレフィックス（FY/1Q/2Q/3Q）と `code` 仕様を確認
-- [ ] Cloud Run: `jquants-api-key` シークレットを登録（旧 jquants-email/password は削除可）
+### 実装した修正
+1. `BuyCandidatesManager` の状態をCache（GCS対応）経由で永続化 — Cloud Runで毎回状態消失していたバグ
+2. 日経225取得 days=300→450 — 198営業日<200で市場レジームが常に中立固定だったバグ
+3. 損切りルール追加 — `stop_loss_pct`（既定10%）、初回推奨時価格 `entry_close` 基準
+
+### 未実施（今後の検討）
+- SELLダマシ対策、セクター分散制約、下落局面を含む再評価
+
+---
+
+（前タスク「J-Quants V2移行」は完了済み。記録は git 履歴 ab7825d を参照）
