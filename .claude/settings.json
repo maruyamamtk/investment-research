@@ -1,4 +1,33 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(pytest *)",
+      "Bash(python3 -m pytest *)",
+      "Bash(python3 pipelines/agent_weekly_pipeline.py *)",
+      "Bash(python3 pipelines/comps_pipeline.py *)",
+      "Bash(python3 pipelines/daily_pipeline.py *)",
+      "Bash(python3 pipelines/dcf_pipeline.py *)",
+      "Bash(python3 pipelines/deep_research_pipeline.py *)",
+      "Bash(python3 pipelines/earnings_pipeline.py *)",
+      "Bash(python3 pipelines/entrypoint.py *)",
+      "Bash(python3 pipelines/notify_morning.py *)",
+      "Bash(python3 pipelines/portfolio_pipeline.py *)",
+      "Bash(python3 pipelines/weekly_pipeline.py *)",
+      "Bash(gcloud logging read *)",
+      "Bash(gcloud storage ls *)",
+      "Bash(gcloud storage cat *)",
+      "Bash(gcloud config get*)",
+      "Bash(gcloud run services describe *)",
+      "Bash(gcloud run services list *)",
+      "Bash(gcloud run jobs describe *)",
+      "Bash(gcloud run jobs executions list *)",
+      "Bash(gcloud run jobs executions describe *)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_snapshot"
+    ]
+  },
   "hooks": {
     "PostToolUse": [
       {

@@ -81,6 +81,7 @@ technical:
     rsi_oversold: 35
     rsi_overbought: 75
     earnings_hold_days: 3
+    stop_loss_pct: 0.10
 
 # --- データ取得設定 ---
 data:
